@@ -32,6 +32,22 @@ pluginManagement {
     }
 }
 
+// Optional source-level integration with a local lets-plot core checkout.
+// Used by compatibility CI to validate this frontend against the upgraded core
+// without publishing native artifacts to a temporary Maven repository.
+System.getenv("LETS_PLOT_CORE_BUILD")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { coreBuildPath ->
+        includeBuild(coreBuildPath) {
+            dependencySubstitution {
+                substitute(module("org.jetbrains.lets-plot:lets-plot-common"))
+                    .using(project(":jvm-package:jvm-publish-common"))
+                substitute(module("org.jetbrains.lets-plot:visual-testing"))
+                    .using(project(":visual-testing"))
+            }
+        }
+    }
+
 include("lets-plot-compose")
 include("platf-android")
 
