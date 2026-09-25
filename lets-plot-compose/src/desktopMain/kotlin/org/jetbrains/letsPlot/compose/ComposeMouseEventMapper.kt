@@ -36,7 +36,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     override suspend fun PointerInputScope.invoke() {
         awaitPointerEventScope {
             while (true) {
-                handlePointerEvent(awaitPointerEvent(), density)
+                handlePointerEvent(awaitPointerEvent(PointerEventPass.Initial), density)
             }
         }
     }
