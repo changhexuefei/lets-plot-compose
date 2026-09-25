@@ -70,20 +70,29 @@ jobs:
             Select-Object -First 1
 
           if ($null -ne $icd) {
-            "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "VK_ICD_FILENAMES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "GRAPHITE_VULKAN_PROVIDER=browser-swiftshader" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "vulkan.provider=browser-swiftshader" | Add-Content $report
-            "vulkan.icd=$($icd.FullName)" | Add-Content $report
-
             $json = Get-Content $icd.FullName -Raw | ConvertFrom-Json
             $libraryPath = $json.ICD.library_path
             $resolvedLibrary = Join-Path $icd.Directory.FullName $libraryPath
-            "vulkan.icd.library=$resolvedLibrary" | Add-Content $report
-            "vulkan.icd.library.exists=$(Test-Path $resolvedLibrary)" | Add-Content $report
             if (!(Test-Path $resolvedLibrary)) {
               throw "Browser SwiftShader ICD manifest found, but its library is missing: $resolvedLibrary"
             }
+
+            $directDir = Join-Path $env:RUNNER_TEMP 'letsplot-swiftshader-vulkan'
+            New-Item -ItemType Directory -Force -Path $directDir | Out-Null
+            $directDll = Join-Path $directDir 'vulkan-1.dll'
+            Copy-Item -Path $resolvedLibrary -Destination $directDll -Force
+
+            "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "VK_ICD_FILENAMES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_PROVIDER=browser-swiftshader-direct" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_DIRECT_DLL=$directDll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+            "vulkan.provider=browser-swiftshader-direct" | Add-Content $report
+            "vulkan.icd=$($icd.FullName)" | Add-Content $report
+            "vulkan.icd.library=$resolvedLibrary" | Add-Content $report
+            "vulkan.icd.library.exists=True" | Add-Content $report
+            "vulkan.direct.dll=$directDll" | Add-Content $report
+            "vulkan.direct.dll.sha256=$((Get-FileHash -Path $directDll -Algorithm SHA256).Hash.ToLowerInvariant())" | Add-Content $report
           } else {
             "GRAPHITE_VULKAN_PROVIDER=system" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             "vulkan.provider=system" | Add-Content $report
