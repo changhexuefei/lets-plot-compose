@@ -36,9 +36,13 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     override suspend fun PointerInputScope.invoke() {
         awaitPointerEventScope {
             while (true) {
-                // Observe pointer events before downstream handlers can consume them.
-                // This preserves the established Compose 1.12.1 desktop interaction path.
-                handlePointerEvent(awaitPointerEvent(PointerEventPass.Initial), density)
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                // Desktop hover moves are handled by Modifier.onPointerEvent in
+                // PlotPanelComposeCanvas. Keep the coroutine path for all other
+                // pointer events so Move is never dispatched twice.
+                if (event.type != PointerEventType.Move) {
+                    handlePointerEvent(event, density)
+                }
             }
         }
     }
