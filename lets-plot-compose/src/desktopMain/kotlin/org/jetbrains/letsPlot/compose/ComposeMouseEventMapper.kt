@@ -20,6 +20,12 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
         this.offsetY = offsetY
     }
 
+    suspend fun handlePointerInput(scope: PointerInputScope) {
+        with(scope) {
+            invoke()
+        }
+    }
+
     override fun addEventHandler(eventSpec: MouseEventSpec, eventHandler: EventHandler<MouseEvent>): Registration {
         return mouseEventPeer.addEventHandler(eventSpec, eventHandler)
     }
