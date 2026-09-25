@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: lets-plot-compatibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compose-compatibility:
     runs-on: ubuntu-latest
@@ -20,21 +24,21 @@ jobs:
         with:
           path: compose
 
-      - name: Checkout upgraded lets-plot core
+      - name: Checkout lets-plot core
         uses: actions/checkout@v4
         with:
           repository: changhexuefei/lets-plot
           ref: master
           path: core
 
-      - name: Checkout upgraded lets-plot-kotlin
+      - name: Checkout lets-plot-kotlin
         uses: actions/checkout@v4
         with:
           repository: changhexuefei/lets-plot-kotlin
           ref: master
           path: kotlin-api
 
-      - name: Set up JDK 17
+      - name: Set up JDK 17 build runtime
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -42,6 +46,11 @@ jobs:
 
       - name: Validate Gradle wrappers
         uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Configure three-repository integration
         run: |
@@ -57,14 +66,13 @@ jobs:
           sonatype.password=
           EOF
 
-      - name: Publish Lets-Plot Kotlin 4.15.1-SNAPSHOT locally
+      - name: Publish Lets-Plot Kotlin API
         working-directory: kotlin-api
         run: ./gradlew :plot-api:publishAllPublicationsToMavenLocalRepository --stacktrace
 
       - name: Configure Compose build
-        working-directory: compose
         run: |
-          cat > local.properties <<EOF
+          cat > compose/local.properties <<EOF
           sonatype.username=
           sonatype.password=
           maven.repo.local=${GITHUB_WORKSPACE}/kotlin-api/.maven-publish-dev-repo
@@ -85,3 +93,203 @@ jobs:
       - name: Run Desktop tests
         working-directory: compose
         run: ./gradlew :lets-plot-compose:desktopTest --stacktrace
+
+      - name: Publish Compose Desktop consumer artifacts
+        working-directory: compose
+        run: >
+          ./gradlew
+          :lets-plot-compose:publishDesktopPublicationToMavenLocalRepository
+          :lets-plot-compose:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          --stacktrace
+
+      - name: Assemble frontend Maven bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p frontend-bundle/kotlin frontend-bundle/compose
+          cp -R kotlin-api/.maven-publish-dev-repo/. frontend-bundle/kotlin/
+          cp -R compose/.maven-publish-dev-repo/. frontend-bundle/compose/
+
+          {
+            echo "lets-plot-core.version=4.11.1-SNAPSHOT"
+            echo "lets-plot-kotlin.version=4.15.1-SNAPSHOT"
+            echo "lets-plot-compose.version=3.2.3-SNAPSHOT"
+            echo "kotlin.version=2.4.20"
+            echo "compose.version=1.12.1"
+            echo "lets-plot-core.sha=$(git -C core rev-parse HEAD)"
+            echo "lets-plot-kotlin.sha=$(git -C kotlin-api rev-parse HEAD)"
+            echo "lets-plot-compose.sha=$(git -C compose rev-parse HEAD)"
+            echo "workflow.sha=${GITHUB_SHA}"
+            echo "workflow.run_id=${GITHUB_RUN_ID}"
+          } > frontend-bundle/manifest.txt
+
+      - name: Upload frontend Maven bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: frontend-bundle
+          if-no-files-found: error
+          retention-days: 3
+
+  core-jvm-bundle:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+    steps:
+      - name: Checkout lets-plot core only
+        uses: actions/checkout@v4
+        with:
+          repository: changhexuefei/lets-plot
+          ref: master
+          path: core
+
+      - name: Set up JDK 17 Core build runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Validate Core Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Core Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Configure Lets-Plot core
+        shell: pwsh
+        run: |
+          @"
+          enable_python_package=false
+          "@ | Set-Content -Path core/local.properties -Encoding UTF8
+
+      - name: Publish Core JVM consumer artifacts
+        working-directory: core
+        shell: pwsh
+        run: >
+          .\gradlew.bat
+          -Pbuild_release=true
+          -Penable_python_package=false
+          :commons:publishJvmPublicationToMavenLocalRepository
+          :commons:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :canvas:publishJvmPublicationToMavenLocalRepository
+          :canvas:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :datamodel:publishJvmPublicationToMavenLocalRepository
+          :datamodel:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-base:publishJvmPublicationToMavenLocalRepository
+          :plot-base:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-builder:publishJvmPublicationToMavenLocalRepository
+          :plot-builder:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-stem:publishJvmPublicationToMavenLocalRepository
+          :plot-stem:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-raster:publishJvmPublicationToMavenLocalRepository
+          :plot-raster:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishJvmPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :platf-awt:publishPlatf-awtPublicationToMavenLocalRepository
+          :platf-batik:publishPlatf-batikPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-swing:publishLetsPlotJvmSwingPublicationToMavenLocalRepository
+          --stacktrace
+
+      - name: Assemble Core Maven bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path core-bundle\core | Out-Null
+          Copy-Item -Recurse -Force core\.maven-publish-dev-repo\* core-bundle\core\
+
+          @"
+          lets-plot-core.version=4.11.1-SNAPSHOT
+          lets-plot-core.sha=$(git -C core rev-parse HEAD)
+          workflow.sha=${{ github.sha }}
+          workflow.run_id=${{ github.run_id }}
+          "@ | Set-Content -Path core-bundle\core-manifest.txt -Encoding UTF8
+
+      - name: Upload Core Maven bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: core-bundle
+          if-no-files-found: error
+          retention-days: 3
+
+  windows-consumer-smoke:
+    needs:
+      - compose-compatibility
+      - core-jvm-bundle
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+    steps:
+      - name: Checkout standalone consumer only
+        uses: actions/checkout@v4
+        with:
+          path: compose
+          sparse-checkout: |
+            consumer-smoke
+            gradlew
+            gradlew.bat
+            gradle/wrapper
+          sparse-checkout-cone-mode: false
+
+      - name: Download frontend Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Set up JDK 21 consumer runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up consumer Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Build and run standalone consumer
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\consumer-bundle\compose
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}\compose\consumer-smoke\build\smoke
+        run: .\gradlew.bat -p consumer-smoke clean classes run --stacktrace
+
+      - name: Verify smoke summary
+        shell: pwsh
+        run: |
+          $summary = "compose\consumer-smoke\build\smoke\smoke-summary.txt"
+          if (!(Test-Path $summary)) {
+            throw "Smoke summary was not created: $summary"
+          }
+          Get-Content $summary
+          if (!(Select-String -Path $summary -Pattern "^result=PASS$" -Quiet)) {
+            throw "Smoke summary does not contain result=PASS"
+          }
+
+      - name: Upload Windows consumer regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-jdk21-consumer-evidence-${{ github.sha }}
+          path: |
+            compose/consumer-smoke/build/smoke/*.png
+            compose/consumer-smoke/build/smoke/smoke-summary.txt
+            consumer-bundle/manifest.txt
+            consumer-bundle/core-manifest.txt
+          if-no-files-found: warn
+          retention-days: 90
