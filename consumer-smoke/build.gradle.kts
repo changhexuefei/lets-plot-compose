@@ -14,6 +14,9 @@ kotlin {
     jvmToolchain(21)
 }
 
+val smokeLetsPlotComposeArtifact = providers.environmentVariable("SMOKE_LETS_PLOT_COMPOSE_ARTIFACT")
+    .orElse("lets-plot-compose")
+
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material)
@@ -21,7 +24,7 @@ dependencies {
     // Deliberately consume published artifacts only: no project(":...") dependencies.
     implementation("org.jetbrains.lets-plot:lets-plot-common:4.11.1-SNAPSHOT")
     implementation("org.jetbrains.lets-plot:lets-plot-kotlin:4.15.1-SNAPSHOT")
-    implementation("org.jetbrains.lets-plot:lets-plot-compose:3.2.3-SNAPSHOT")
+    implementation("org.jetbrains.lets-plot:${smokeLetsPlotComposeArtifact.get()}:3.2.3-SNAPSHOT")
 
     implementation("org.slf4j:slf4j-simple:2.0.17")
 }
