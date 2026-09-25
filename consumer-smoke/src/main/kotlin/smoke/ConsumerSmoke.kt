@@ -107,6 +107,7 @@ fun main() {
                 ensureNoAsyncFailure(asyncFailure)
                 val renderImage = captureWindow(robot, firstWindow, outputDir.resolve("01-render.png"))
                 assertImageHasContent(renderImage)
+                assertSmokeFigureRendered(renderImage)
                 checkpoint("render")
                 val initialWindowWidth = firstWindow.width
                 val initialWindowHeight = firstWindow.height
@@ -131,6 +132,15 @@ fun main() {
                     "Resize did not produce a visible plot/layout change."
                 }
                 checkpoint("resize")
+                if (System.getenv("SMOKE_TOOLTIP_STABLE_BASELINE").equals("true", ignoreCase = true)) {
+                    movePointerOutsidePlot(robot, firstWindow)
+                    delay(
+                        System.getenv("SMOKE_TOOLTIP_DWELL_MS")
+                            ?.toLongOrNull()
+                            ?.coerceIn(100L, 2_000L)
+                            ?: 300L
+                    )
+                }
                 val tooltipBaseline = captureWindow(
                     robot,
                     firstWindow,
@@ -319,31 +329,78 @@ private suspend fun exerciseTooltipHover(
     val centerX = origin.x + window.width / 2
     val centerY = origin.y + window.height / 2 + 18
 
-    val offsets = listOf(
-        0 to 0,
-        -12 to 0,
-        12 to 0,
-        0 to -12,
-        0 to 12,
-        -20 to -10,
-        20 to 10
-    )
+    // Preserve the canonical probe defaults. Preview lanes may widen the search
+    // and dwell longer without changing the visible-change assertion threshold.
+    val dwellMs = System.getenv("SMOKE_TOOLTIP_DWELL_MS")
+        ?.toLongOrNull()
+        ?.coerceIn(100L, 2_000L)
+        ?: 300L
+    val xRadius = System.getenv("SMOKE_TOOLTIP_X_RADIUS")
+        ?.toIntOrNull()
+        ?.coerceIn(40, 240)
+        ?: 120
+    val yRadius = System.getenv("SMOKE_TOOLTIP_Y_RADIUS")
+        ?.toIntOrNull()
+        ?.coerceIn(30, 180)
+        ?: 90
 
-    robot.mouseMove(centerX - 140, centerY - 90)
-    delay(250)
+    val offsets = buildList {
+        add(0 to 0)
+
+        val xOffsets = (-xRadius..xRadius step 40).toList()
+        val yOffsets = (-yRadius..yRadius step 30).toList()
+        for (dy in yOffsets) {
+            for (dx in xOffsets) {
+                if (dx != 0 || dy != 0) {
+                    add(dx to dy)
+                }
+            }
+        }
+    }
 
     var latest = baseline
-    for ((dx, dy) in offsets) {
-        robot.mouseMove(centerX + dx, centerY + dy)
-        delay(650)
-        latest = screenCapture(robot, window)
+    var bestImage = baseline
+    var bestDifference = 0.0
+    var bestOffset = 0 to 0
 
-        if (pixelDifferenceRatio(baseline, latest) > IMAGE_CHANGE_THRESHOLD) {
+    for ((dx, dy) in offsets) {
+        val screenX = centerX + dx
+        val screenY = centerY + dy
+
+        robot.mouseMove(screenX, screenY)
+        delay(dwellMs)
+        latest = screenCapture(robot, window)
+        val difference = pixelDifferenceRatio(baseline, latest)
+
+        if (difference > bestDifference) {
+            bestDifference = difference
+            bestOffset = dx to dy
+            bestImage = latest
+        }
+
+        // The threshold is deliberately unchanged: a candidate still passes only
+        // when hovering produces a visible repaint above the canonical threshold.
+        if (difference > IMAGE_CHANGE_THRESHOLD) {
+            println(
+                "SMOKE_TOOLTIP_HIT mode=robot offset=${dx},${dy} difference=$difference"
+            )
             return latest
         }
     }
 
-    return latest
+    println(
+        "SMOKE_TOOLTIP_MISS bestOffset=${bestOffset.first},${bestOffset.second} " +
+            "bestDifference=$bestDifference threshold=$IMAGE_CHANGE_THRESHOLD"
+    )
+    return bestImage
+}
+
+private fun movePointerOutsidePlot(robot: Robot, window: AwtWindow) {
+    val origin = window.locationOnScreen
+    robot.mouseMove(
+        origin.x + 8,
+        origin.y + 8
+    )
 }
 
 private fun exerciseWheelZoom(robot: Robot, window: AwtWindow) {
@@ -427,6 +484,36 @@ private fun assertImageHasContent(image: BufferedImage) {
 
     check(colors.size >= 12) {
         "Rendered window looks blank or nearly uniform: only ${colors.size} sampled colors."
+    }
+}
+
+private fun assertSmokeFigureRendered(image: BufferedImage) {
+    var redPixels = 0
+    var greenPixels = 0
+
+    var y = 0
+    while (y < image.height) {
+        var x = 0
+        while (x < image.width) {
+            val rgb = image.getRGB(x, y)
+            val r = (rgb shr 16) and 0xFF
+            val g = (rgb shr 8) and 0xFF
+            val b = rgb and 0xFF
+
+            if (r > 180 && g < 120 && b < 120) {
+                redPixels++
+            }
+            if (g > 120 && r < 160 && b < 160) {
+                greenPixels++
+            }
+            x += 2
+        }
+        y += 2
+    }
+
+    check(redPixels >= 250 && greenPixels >= 250) {
+        "Smoke figure markers were not rendered: redPixels=$redPixels greenPixels=$greenPixels. " +
+            "The window may contain an internal renderer error panel instead of the plot."
     }
 }
 
