@@ -1,0 +1,167 @@
+name: Graphite Runtime Capability Probe
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'graphite-runtime-probe/**'
+      - '.github/workflows/graphite-runtime-capability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphite-runtime-capability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-graphite-runtime-capability:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      GRAPHITE_SKIKO_VERSION: '0.153.0'
+      GRAPHITE_LWJGL_VERSION: '3.4.3'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Capture Windows Vulkan environment
+        shell: pwsh
+        run: |
+          $probeDir = "graphite-runtime-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          "os=$([System.Environment]::OSVersion.VersionString)" | Set-Content $report
+          "vulkan.loader.exists=$(Test-Path "$env:SystemRoot\System32\vulkan-1.dll")" | Add-Content $report
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, DriverVersion, AdapterRAM |
+            Format-List | Out-String | Add-Content $report
+          Get-Content $report
+      - name: Configure browser SwiftShader Vulkan ICD
+        shell: pwsh
+        run: |
+          $probeDir = "graphite-runtime-probe\build\probe"
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          $roots = @(
+            "$env:ProgramFiles\Google\Chrome\Application",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application",
+            "$env:ProgramFiles\Microsoft\Edge\Application",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          $icd = $roots |
+            ForEach-Object { Get-ChildItem -Path $_ -Filter 'vk_swiftshader_icd.json' -File -Recurse -ErrorAction SilentlyContinue } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if ($null -ne $icd) {
+            $json = Get-Content $icd.FullName -Raw | ConvertFrom-Json
+            $libraryPath = $json.ICD.library_path
+            $resolvedLibrary = Join-Path $icd.Directory.FullName $libraryPath
+            if (!(Test-Path $resolvedLibrary)) {
+              throw "Browser SwiftShader ICD manifest found, but its library is missing: $resolvedLibrary"
+            }
+
+            $directDir = Join-Path $env:RUNNER_TEMP 'letsplot-swiftshader-vulkan'
+            New-Item -ItemType Directory -Force -Path $directDir | Out-Null
+            $directDll = Join-Path $directDir 'vulkan-1.dll'
+            Copy-Item -Path $resolvedLibrary -Destination $directDll -Force
+
+            "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "VK_ICD_FILENAMES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_PROVIDER=browser-swiftshader-direct" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_DIRECT_DLL=$directDll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+            "vulkan.provider=browser-swiftshader-direct" | Add-Content $report
+            "vulkan.icd=$($icd.FullName)" | Add-Content $report
+            "vulkan.icd.library=$resolvedLibrary" | Add-Content $report
+            "vulkan.icd.library.exists=True" | Add-Content $report
+            "vulkan.direct.dll=$directDll" | Add-Content $report
+            "vulkan.direct.dll.sha256=$((Get-FileHash -Path $directDll -Algorithm SHA256).Hash.ToLowerInvariant())" | Add-Content $report
+          } else {
+            "GRAPHITE_VULKAN_PROVIDER=system" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "vulkan.provider=system" | Add-Content $report
+            "vulkan.icd=not-found" | Add-Content $report
+          }
+
+          Get-Content $report
+
+      - name: Verify Skiko Graphite Windows runtime artifacts
+        shell: pwsh
+        run: |
+          $probeDir = "graphite-runtime-probe\build\probe"
+          $report = Join-Path $probeDir "graphite-runtime-dependencies.txt"
+
+          .\gradlew.bat -p graphite-runtime-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency skiko-graphite-awt-runtime-windows-x64 --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          .\gradlew.bat -p graphite-runtime-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency skiko-awt-runtime-windows-x64 --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+
+          $escaped = [regex]::Escape($env:GRAPHITE_SKIKO_VERSION)
+          if (!(Select-String -Path $report -Pattern "org\.jetbrains\.skiko:skiko-graphite-awt-runtime-windows-x64:$escaped" -Quiet)) {
+            throw "Skiko Graphite Windows x64 runtime $env:GRAPHITE_SKIKO_VERSION was not resolved"
+          }
+          if (!(Select-String -Path $report -Pattern "org\.jetbrains\.skiko:skiko-awt-runtime-windows-x64:$escaped" -Quiet)) {
+            throw "Skiko base Windows x64 runtime $env:GRAPHITE_SKIKO_VERSION was not resolved"
+          }
+
+      - name: Run Vulkan-backed Graphite runtime probe
+        shell: pwsh
+        run: |
+          .\gradlew.bat -p graphite-runtime-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
+            graphiteRuntimeCapabilityProbe --stacktrace
+
+      - name: Verify runtime capability contract
+        shell: pwsh
+        run: |
+          $result = "graphite-runtime-probe\build\probe\graphite-runtime-capability.txt"
+          if (!(Test-Path $result)) {
+            throw "Graphite runtime capability result was not created"
+          }
+          Get-Content $result
+          foreach ($pattern in @(
+            '^result=RUNTIME_CAPABLE$',
+            '^vulkan.instance=CREATED$',
+            '^vulkan.device=CREATED$',
+            '^vulkan.queue=CREATED$',
+            '^graphite.native.library=LOADED$',
+            '^graphite.context=CREATED$',
+            '^graphite.recorder=CREATED$',
+            '^graphite.submit=PASS$',
+            '^compose.integration=NOT_ATTEMPTED$',
+            '^plotpanel.integration=NOT_ATTEMPTED$',
+            '^renderer.adoption=NOT_STARTED$'
+          )) {
+            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
+              throw "Graphite runtime capability contract missing: $pattern"
+            }
+          }
+
+      - name: Upload Graphite runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-runtime-capability-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            graphite-runtime-probe/build/probe/graphite-runtime-capability.txt
+            graphite-runtime-probe/build/probe/graphite-runtime-dependencies.txt
+            graphite-runtime-probe/build/probe/windows-vulkan-environment.txt
+          if-no-files-found: warn
+          retention-days: 90
