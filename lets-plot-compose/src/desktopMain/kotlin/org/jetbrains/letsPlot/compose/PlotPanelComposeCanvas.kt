@@ -219,13 +219,13 @@ fun PlotPanelComposeCanvas(
                 Canvas(
                     modifier = modifier
                         .fillMaxSize()
+                        .pointerInput(composeMouseEventMapper) {
+                            composeMouseEventMapper.handlePointerInput(this)
+                        }
                         .pointerHoverIcon(PointerIcon(Cursor(Cursor.CROSSHAIR_CURSOR)))
                         .onSizeChanged { size ->
                             // Convert canvas logical pixels (from Compose layout) to physical pixels (plot SVG pixels)
                             plotDrawable.resize(size.width / density, size.height / density)
-                        }
-                        .pointerInput(composeMouseEventMapper) {
-                            composeMouseEventMapper.handlePointerInput(this)
                         }
                 ) {
                     // By reading redrawTrigger here, Compose knows to recompose
