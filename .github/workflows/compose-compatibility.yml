@@ -283,6 +283,50 @@ jobs:
             throw "Smoke summary does not contain result=PASS"
           }
 
+      - name: Capture Skiko renderer dependency report
+        working-directory: compose
+        shell: pwsh
+        run: |
+          $report = "consumer-smoke\\build\\smoke\\renderer-dependencies.txt"
+          .\\gradlew.bat -p consumer-smoke dependencyInsight --dependency skiko --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          if (!(Test-Path $report)) {
+            throw "Renderer dependency report was not created: $report"
+          }
+
+      - name: Build renderer baseline manifest
+        shell: pwsh
+        run: |
+          $smokeDir = "compose\\consumer-smoke\\build\\smoke"
+          $manifest = Join-Path $smokeDir "baseline-manifest.txt"
+          $screenshots = @(Get-ChildItem -Path $smokeDir -Filter "*.png" | Sort-Object Name)
+
+          if ($screenshots.Count -ne 9) {
+            throw "Expected 9 baseline screenshots, found $($screenshots.Count)"
+          }
+
+          $lines = @(
+            "schema=1",
+            "baseline.id=$env:SMOKE_BASELINE_ID",
+            "platform=windows",
+            "jdk=21",
+            "renderer.requested=$env:SMOKE_RENDER_API",
+            "workflow.sha=${{ github.sha }}",
+            "workflow.run_id=${{ github.run_id }}",
+            "comparison.key=baseline.id+checkpoint.filename",
+            "comparison.required_screenshots=9",
+            "comparison.hash_role=provenance-only",
+            "artifact.retention_days=90"
+          )
+
+          foreach ($screenshot in $screenshots) {
+            $hash = (Get-FileHash -Path $screenshot.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $lines += "sha256.$($screenshot.Name)=$hash"
+          }
+
+          $lines | Set-Content -Path $manifest -Encoding UTF8
+          Get-Content $manifest
+
       - name: Upload Windows consumer regression evidence
         if: always()
         uses: actions/upload-artifact@v4
