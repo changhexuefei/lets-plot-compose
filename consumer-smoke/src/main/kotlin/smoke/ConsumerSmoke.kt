@@ -131,6 +131,8 @@ fun main() {
                     "Resize did not produce a visible plot/layout change."
                 }
                 checkpoint("resize")
+                movePointerOutsidePlot(robot, firstWindow)
+                delay(700)
                 val tooltipBaseline = captureWindow(
                     robot,
                     firstWindow,
@@ -319,14 +321,13 @@ private suspend fun exerciseTooltipHover(
     val centerX = origin.x + window.width / 2
     val centerY = origin.y + window.height / 2 + 18
 
-    // Keep the visual assertion strict, but do not assume that the central data point
-    // remains within a few pixels of the AWT window center. Compose/Skiko preview
-    // versions can legitimately shift text metrics and plot insets.
+    // Keep the visual assertion strict, but allow newer Compose/Skiko previews more
+    // time to activate and repaint a tooltip after the pointer enters a data point.
     val offsets = buildList {
         add(0 to 0)
 
-        val xOffsets = listOf(-120, -80, -40, 0, 40, 80, 120)
-        val yOffsets = listOf(-90, -60, -30, 0, 30, 60, 90)
+        val xOffsets = listOf(-160, -120, -80, -40, 0, 40, 80, 120, 160)
+        val yOffsets = listOf(-120, -90, -60, -30, 0, 30, 60, 90, 120)
         for (dy in yOffsets) {
             for (dx in xOffsets) {
                 if (dx != 0 || dy != 0) {
@@ -336,26 +337,46 @@ private suspend fun exerciseTooltipHover(
         }
     }
 
-    // Move outside the probe area first so every candidate hover is compared with
-    // a stable non-tooltip baseline.
-    robot.mouseMove(centerX - 220, centerY - 160)
-    delay(300)
-
     var latest = baseline
+    var bestImage = baseline
+    var bestDifference = 0.0
+    var bestOffset = 0 to 0
+
     for ((dx, dy) in offsets) {
         robot.mouseMove(centerX + dx, centerY + dy)
-        delay(300)
+        delay(700)
         latest = screenCapture(robot, window)
+        val difference = pixelDifferenceRatio(baseline, latest)
+
+        if (difference > bestDifference) {
+            bestDifference = difference
+            bestOffset = dx to dy
+            bestImage = latest
+        }
 
         // The threshold is deliberately unchanged: a candidate still passes only
-        // when hovering produces the same kind of visible repaint used by the
-        // canonical consumer smoke.
-        if (pixelDifferenceRatio(baseline, latest) > IMAGE_CHANGE_THRESHOLD) {
+        // when hovering produces a visible repaint above the canonical threshold.
+        if (difference > IMAGE_CHANGE_THRESHOLD) {
+            println(
+                "SMOKE_TOOLTIP_HIT offset=${dx},${dy} difference=$difference"
+            )
             return latest
         }
     }
 
-    return latest
+    println(
+        "SMOKE_TOOLTIP_MISS bestOffset=${bestOffset.first},${bestOffset.second} " +
+            "bestDifference=$bestDifference threshold=$IMAGE_CHANGE_THRESHOLD"
+    )
+    return bestImage
+}
+
+private fun movePointerOutsidePlot(robot: Robot, window: AwtWindow) {
+    val origin = window.locationOnScreen
+    robot.mouseMove(
+        origin.x + 8,
+        origin.y + 8
+    )
 }
 
 private fun exerciseWheelZoom(robot: Robot, window: AwtWindow) {
