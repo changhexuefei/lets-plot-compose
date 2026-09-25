@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -47,6 +50,7 @@ private val LOG = PortableLogging.logger(name = "[PlotPanelRaw2]")
 
 private const val logRecompositions = false
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionName")
 @Composable
 fun PlotPanelComposeCanvas(
@@ -221,6 +225,9 @@ fun PlotPanelComposeCanvas(
                         .fillMaxSize()
                         .pointerInput(composeMouseEventMapper) {
                             composeMouseEventMapper.handlePointerInput(this)
+                        }
+                        .onPointerEvent(PointerEventType.Move) { event ->
+                            composeMouseEventMapper.handlePointerEvent(event, density)
                         }
                         .pointerHoverIcon(PointerIcon(Cursor(Cursor.CROSSHAIR_CURSOR)))
                         .onSizeChanged { size ->
