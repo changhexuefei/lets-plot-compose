@@ -475,6 +475,10 @@ jobs:
 
           Get-Content $compatibility
 
+          # The candidate Gradle process is expected to exit 1 for this exact ABI mismatch.
+          # Only reach exit 0 after both the dependency version and failure signature were verified.
+          exit 0
+
       - name: Build Skiko ABI evidence manifest
         shell: pwsh
         run: |
