@@ -53,6 +53,16 @@ fun main() {
             "Runtime capability probe is intentionally Windows-only"
         }
 
+        val directVulkanDll = System.getenv("GRAPHITE_VULKAN_DIRECT_DLL")
+        if (!directVulkanDll.isNullOrBlank()) {
+            stage = "vulkan-preload"
+            val directDll = File(directVulkanDll).absoluteFile
+            check(directDll.isFile) { "Direct Vulkan library does not exist: ${directDll.absolutePath}" }
+            System.setProperty("org.lwjgl.vulkan.libname", directDll.absolutePath)
+            System.load(directDll.absolutePath)
+            evidence["vulkan.direct.dll"] = "LOADED"
+        }
+
         stage = "vulkan-create"
         val vk = createVulkanObjects()
         evidence["vulkan.instance"] = "CREATED"
