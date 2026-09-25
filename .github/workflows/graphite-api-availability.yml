@@ -41,13 +41,10 @@ jobs:
 
       - name: Compile Graphite API probe
         shell: pwsh
-        run: >
-          .\gradlew.bat
-          -p graphite-api-probe
-          -PskikoVersion=$env:GRAPHITE_SKIKO_VERSION
-          clean
-          graphiteApiAvailabilityProbe
-          --stacktrace
+        run: |
+          .\gradlew.bat -p graphite-api-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            clean graphiteApiAvailabilityProbe --stacktrace
 
       - name: Capture Graphite dependency evidence
         shell: pwsh
@@ -56,7 +53,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
           $report = Join-Path $probeDir "graphite-dependencies.txt"
 
-          .\gradlew.bat -p graphite-api-probe -PskikoVersion=$env:GRAPHITE_SKIKO_VERSION dependencyInsight --dependency skiko-graphite --configuration compileClasspath --console=plain |
+          .\gradlew.bat -p graphite-api-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" dependencyInsight --dependency skiko-graphite --configuration compileClasspath --console=plain |
             Tee-Object -FilePath $report
 
           $escapedVersion = [regex]::Escape($env:GRAPHITE_SKIKO_VERSION)
