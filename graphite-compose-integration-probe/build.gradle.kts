@@ -17,6 +17,11 @@ val graphiteSkikoVersion = providers.gradleProperty("graphiteSkikoVersion").orEl
 dependencies {
     implementation(compose.desktop.currentOs)
 
+    // Force a coherent Skiko 0.153 stack. A mixed 0.152 core / 0.153 AWT stack
+    // is not sufficient evidence for Graphite integration readiness.
+    implementation("org.jetbrains.skiko:skiko:${graphiteSkikoVersion.get()}")
+    implementation("org.jetbrains.skiko:skiko-awt:${graphiteSkikoVersion.get()}")
+
     implementation("org.jetbrains.skiko:skiko-graphite-awt:${graphiteSkikoVersion.get()}")
     runtimeOnly("org.jetbrains.skiko:skiko-graphite-awt-runtime-windows-x64:${graphiteSkikoVersion.get()}")
     runtimeOnly("org.jetbrains.skiko:skiko-awt-runtime-windows-x64:${graphiteSkikoVersion.get()}")
