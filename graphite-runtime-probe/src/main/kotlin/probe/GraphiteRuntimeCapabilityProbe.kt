@@ -4,6 +4,7 @@ import org.jetbrains.skia.gpu.graphite.GraphiteContext
 import org.jetbrains.skiko.ExperimentalSkikoApi
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.vulkan.VK10.*
+import org.lwjgl.vulkan.VK11.VK_API_VERSION_1_1
 import org.lwjgl.vulkan.VkApplicationInfo
 import org.lwjgl.vulkan.VkDevice
 import org.lwjgl.vulkan.VkDeviceCreateInfo
@@ -45,7 +46,8 @@ fun main() {
         "vulkan.provider" to (System.getenv("GRAPHITE_VULKAN_PROVIDER") ?: "unknown"),
         "compose.integration" to "NOT_ATTEMPTED",
         "plotpanel.integration" to "NOT_ATTEMPTED",
-        "renderer.adoption" to "NOT_STARTED"
+        "renderer.adoption" to "NOT_STARTED",
+        "vulkan.requested.api" to "1.1"
     )
 
     try {
@@ -80,7 +82,7 @@ fun main() {
                 devicePtr = vk.device.address(),
                 queuePtr = vk.queue.address(),
                 graphicsQueueIndex = vk.queueFamilyIndex,
-                maxApiVersion = VK_API_VERSION_1_0
+                maxApiVersion = VK_API_VERSION_1_1
             ).use { context ->
                 evidence["graphite.native.library"] = "LOADED"
                 evidence["graphite.context"] = "CREATED"
@@ -127,7 +129,7 @@ private fun createVulkanObjects(): VulkanObjects {
             .applicationVersion(1)
             .pEngineName(stack.UTF8("none"))
             .engineVersion(1)
-            .apiVersion(VK_API_VERSION_1_0)
+            .apiVersion(VK_API_VERSION_1_1)
 
         val instanceCreateInfo = VkInstanceCreateInfo.calloc(stack)
             .sType(VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO)
@@ -185,6 +187,11 @@ private fun createVulkanObjects(): VulkanObjects {
 
                 val properties = VkPhysicalDeviceProperties.calloc(stack)
                 vkGetPhysicalDeviceProperties(physicalDevice, properties)
+                if (properties.apiVersion() < VK_API_VERSION_1_1) {
+                    vkDestroyDevice(device, null)
+                    continue
+                }
+
                 return VulkanObjects(
                     instance = instance,
                     physicalDevice = physicalDevice,
@@ -196,7 +203,7 @@ private fun createVulkanObjects(): VulkanObjects {
                 )
             }
 
-            error("No Vulkan physical device with a usable graphics queue/device was found")
+            error("No Vulkan 1.1+ physical device with a usable graphics queue/device was found")
         } catch (t: Throwable) {
             vkDestroyInstance(instance, null)
             throw t
