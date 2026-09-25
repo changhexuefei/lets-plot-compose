@@ -39,6 +39,12 @@ jobs:
           ref: master
           path: kotlin-api
 
+      - name: Install JDK 11 toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
       - name: Set up JDK 17 build runtime
         uses: actions/setup-java@v4
         with:
