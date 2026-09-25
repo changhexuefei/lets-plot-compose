@@ -224,6 +224,8 @@ jobs:
     env:
       GRADLE_OPTS: -Dorg.gradle.daemon=false
       JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      SMOKE_RENDER_API: SOFTWARE
+      SMOKE_BASELINE_ID: windows-jdk21-software
     steps:
       - name: Checkout standalone consumer only
         uses: actions/checkout@v4
@@ -285,10 +287,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-jdk21-consumer-evidence-${{ github.sha }}
+          name: graphite-skiko-baseline-${{ env.SMOKE_BASELINE_ID }}-${{ github.sha }}
           path: |
             compose/consumer-smoke/build/smoke/*.png
             compose/consumer-smoke/build/smoke/smoke-summary.txt
+            compose/consumer-smoke/build/smoke/baseline-manifest.txt
+            compose/consumer-smoke/build/smoke/renderer-dependencies.txt
             consumer-bundle/manifest.txt
             consumer-bundle/core-manifest.txt
           if-no-files-found: warn
