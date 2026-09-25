@@ -67,19 +67,12 @@ jobs:
           -Penable_python_package=false
           -Parchitecture=x86_64
           :commons:publishJvmPublicationToMavenLocalRepository
-          :commons:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :canvas:publishJvmPublicationToMavenLocalRepository
-          :canvas:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :datamodel:publishJvmPublicationToMavenLocalRepository
-          :datamodel:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :plot-base:publishJvmPublicationToMavenLocalRepository
-          :plot-base:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :plot-builder:publishJvmPublicationToMavenLocalRepository
-          :plot-builder:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :plot-stem:publishJvmPublicationToMavenLocalRepository
-          :plot-stem:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :plot-raster:publishJvmPublicationToMavenLocalRepository
-          :plot-raster:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :jvm-package:jvm-publish-common:publishJvmPublicationToMavenLocalRepository
           :jvm-package:jvm-publish-common:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :platf-awt:publishPlatf-awtPublicationToMavenLocalRepository
