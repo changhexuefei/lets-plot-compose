@@ -37,7 +37,6 @@ import java.awt.Robot
 import java.awt.Window as AwtWindow
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
-import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
 import java.awt.image.BufferedImage
 import java.nio.file.Files
@@ -46,7 +45,6 @@ import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.imageio.ImageIO
-import javax.swing.SwingUtilities
 import kotlin.math.abs
 
 private const val WINDOW_TITLE = "Lets-Plot Consumer Smoke"
@@ -364,9 +362,6 @@ private suspend fun exerciseTooltipHover(
     var bestDifference = 0.0
     var bestOffset = 0 to 0
 
-    val syntheticFallback = System.getenv("SMOKE_TOOLTIP_SYNTHETIC_FALLBACK")
-        .equals("true", ignoreCase = true)
-
     for ((dx, dy) in offsets) {
         val screenX = centerX + dx
         val screenY = centerY + dy
@@ -374,35 +369,12 @@ private suspend fun exerciseTooltipHover(
         robot.mouseMove(screenX, screenY)
         delay(dwellMs)
         latest = screenCapture(robot, window)
-        var difference = pixelDifferenceRatio(baseline, latest)
+        val difference = pixelDifferenceRatio(baseline, latest)
 
         if (difference > bestDifference) {
             bestDifference = difference
             bestOffset = dx to dy
             bestImage = latest
-        }
-
-        // Canonical behavior remains Robot-only. The Compose 1.13 preview lane may
-        // additionally route the same mouse-move event to the deepest AWT/Skiko
-        // component if Robot movement produced no repaint at all.
-        if (difference <= IMAGE_CHANGE_THRESHOLD && syntheticFallback) {
-            dispatchSyntheticMouseMove(window, screenX, screenY)
-            delay(dwellMs)
-            latest = screenCapture(robot, window)
-            difference = pixelDifferenceRatio(baseline, latest)
-
-            if (difference > bestDifference) {
-                bestDifference = difference
-                bestOffset = dx to dy
-                bestImage = latest
-            }
-
-            if (difference > IMAGE_CHANGE_THRESHOLD) {
-                println(
-                    "SMOKE_TOOLTIP_HIT mode=synthetic offset=${dx},${dy} difference=$difference"
-                )
-                return latest
-            }
         }
 
         // The threshold is deliberately unchanged: a candidate still passes only
@@ -417,8 +389,7 @@ private suspend fun exerciseTooltipHover(
 
     println(
         "SMOKE_TOOLTIP_MISS bestOffset=${bestOffset.first},${bestOffset.second} " +
-            "bestDifference=$bestDifference threshold=$IMAGE_CHANGE_THRESHOLD " +
-            "syntheticFallback=$syntheticFallback"
+            "bestDifference=$bestDifference threshold=$IMAGE_CHANGE_THRESHOLD"
     )
     return bestImage
 }
@@ -429,36 +400,6 @@ private fun movePointerOutsidePlot(robot: Robot, window: AwtWindow) {
         origin.x + 8,
         origin.y + 8
     )
-}
-
-private fun dispatchSyntheticMouseMove(
-    window: AwtWindow,
-    screenX: Int,
-    screenY: Int
-) {
-    val origin = window.locationOnScreen
-    val windowX = screenX - origin.x
-    val windowY = screenY - origin.y
-
-    runOnAwtEdtAndWait {
-        val target = SwingUtilities.getDeepestComponentAt(window, windowX, windowY) ?: window
-        val targetPoint = SwingUtilities.convertPoint(window, windowX, windowY, target)
-        target.dispatchEvent(
-            MouseEvent(
-                target,
-                MouseEvent.MOUSE_MOVED,
-                System.currentTimeMillis(),
-                0,
-                targetPoint.x,
-                targetPoint.y,
-                screenX,
-                screenY,
-                0,
-                false,
-                MouseEvent.NOBUTTON
-            )
-        )
-    }
 }
 
 private fun exerciseWheelZoom(robot: Robot, window: AwtWindow) {
