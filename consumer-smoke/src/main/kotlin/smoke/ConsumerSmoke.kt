@@ -107,6 +107,7 @@ fun main() {
                 ensureNoAsyncFailure(asyncFailure)
                 val renderImage = captureWindow(robot, firstWindow, outputDir.resolve("01-render.png"))
                 assertImageHasContent(renderImage)
+                assertSmokeFigureRendered(renderImage)
                 checkpoint("render")
                 val initialWindowWidth = firstWindow.width
                 val initialWindowHeight = firstWindow.height
@@ -483,6 +484,36 @@ private fun assertImageHasContent(image: BufferedImage) {
 
     check(colors.size >= 12) {
         "Rendered window looks blank or nearly uniform: only ${colors.size} sampled colors."
+    }
+}
+
+private fun assertSmokeFigureRendered(image: BufferedImage) {
+    var redPixels = 0
+    var greenPixels = 0
+
+    var y = 0
+    while (y < image.height) {
+        var x = 0
+        while (x < image.width) {
+            val rgb = image.getRGB(x, y)
+            val r = (rgb shr 16) and 0xFF
+            val g = (rgb shr 8) and 0xFF
+            val b = rgb and 0xFF
+
+            if (r > 180 && g < 120 && b < 120) {
+                redPixels++
+            }
+            if (g > 120 && r < 160 && b < 160) {
+                greenPixels++
+            }
+            x += 2
+        }
+        y += 2
+    }
+
+    check(redPixels >= 250 && greenPixels >= 250) {
+        "Smoke figure markers were not rendered: redPixels=$redPixels greenPixels=$greenPixels. " +
+            "The window may contain an internal renderer error panel instead of the plot."
     }
 }
 
