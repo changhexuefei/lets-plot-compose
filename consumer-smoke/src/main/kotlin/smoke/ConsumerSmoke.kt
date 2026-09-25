@@ -131,8 +131,15 @@ fun main() {
                     "Resize did not produce a visible plot/layout change."
                 }
                 checkpoint("resize")
-                movePointerOutsidePlot(robot, firstWindow)
-                delay(700)
+                if (System.getenv("SMOKE_TOOLTIP_STABLE_BASELINE").equals("true", ignoreCase = true)) {
+                    movePointerOutsidePlot(robot, firstWindow)
+                    delay(
+                        System.getenv("SMOKE_TOOLTIP_DWELL_MS")
+                            ?.toLongOrNull()
+                            ?.coerceIn(100L, 2_000L)
+                            ?: 300L
+                    )
+                }
                 val tooltipBaseline = captureWindow(
                     robot,
                     firstWindow,
@@ -321,13 +328,26 @@ private suspend fun exerciseTooltipHover(
     val centerX = origin.x + window.width / 2
     val centerY = origin.y + window.height / 2 + 18
 
-    // Keep the visual assertion strict, but allow newer Compose/Skiko previews more
-    // time to activate and repaint a tooltip after the pointer enters a data point.
+    // Preserve the canonical probe defaults. Preview lanes may widen the search
+    // and dwell longer without changing the visible-change assertion threshold.
+    val dwellMs = System.getenv("SMOKE_TOOLTIP_DWELL_MS")
+        ?.toLongOrNull()
+        ?.coerceIn(100L, 2_000L)
+        ?: 300L
+    val xRadius = System.getenv("SMOKE_TOOLTIP_X_RADIUS")
+        ?.toIntOrNull()
+        ?.coerceIn(40, 240)
+        ?: 120
+    val yRadius = System.getenv("SMOKE_TOOLTIP_Y_RADIUS")
+        ?.toIntOrNull()
+        ?.coerceIn(30, 180)
+        ?: 90
+
     val offsets = buildList {
         add(0 to 0)
 
-        val xOffsets = listOf(-160, -120, -80, -40, 0, 40, 80, 120, 160)
-        val yOffsets = listOf(-120, -90, -60, -30, 0, 30, 60, 90, 120)
+        val xOffsets = (-xRadius..xRadius step 40).toList()
+        val yOffsets = (-yRadius..yRadius step 30).toList()
         for (dy in yOffsets) {
             for (dx in xOffsets) {
                 if (dx != 0 || dy != 0) {
@@ -344,7 +364,7 @@ private suspend fun exerciseTooltipHover(
 
     for ((dx, dy) in offsets) {
         robot.mouseMove(centerX + dx, centerY + dy)
-        delay(700)
+        delay(dwellMs)
         latest = screenCapture(robot, window)
         val difference = pixelDifferenceRatio(baseline, latest)
 
