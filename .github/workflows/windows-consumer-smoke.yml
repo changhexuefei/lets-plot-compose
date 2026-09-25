@@ -86,11 +86,12 @@ jobs:
       - name: Configure Lets-Plot Kotlin API
         shell: pwsh
         run: |
-          $coreRepo = (Join-Path $env:GITHUB_WORKSPACE "core\.maven-publish-dev-repo").Replace('\','/')
+          $coreBuild = (Join-Path $env:GITHUB_WORKSPACE "core").Replace('\','/')
+          "LETS_PLOT_CORE_BUILD=$coreBuild" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
           @"
           sonatype.username=
           sonatype.password=
-          maven.repo.local=$coreRepo
           "@ | Set-Content -Path kotlin-api/local.properties -Encoding UTF8
 
       - name: Publish Kotlin API JVM consumer artifacts
