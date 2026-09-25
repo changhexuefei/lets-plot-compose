@@ -114,7 +114,7 @@ fun main() {
                 checkpoint("render")
 
                 phase = "resize"
-                EventQueue.invokeAndWait {
+                runOnAwtEdtAndWait {
                     firstWindow.setSize(1180, 760)
                     firstWindow.setLocation(80, 80)
                 }
@@ -185,7 +185,7 @@ fun main() {
                 checkpoint("density-1.5")
 
                 phase = "close"
-                EventQueue.invokeAndWait {
+                runOnAwtEdtAndWait {
                     firstWindow.dispatchEvent(WindowEvent(firstWindow, WindowEvent.WINDOW_CLOSING))
                 }
                 awaitWindowClosed(visibleWindow, firstWindow)
@@ -371,7 +371,7 @@ private fun exerciseWheelZoom(robot: Robot, window: AwtWindow) {
     }
 }
 
-private fun exerciseDragPan(robot: Robot, window: AwtWindow) {
+private suspend fun exerciseDragPan(robot: Robot, window: AwtWindow) {
     val origin = window.locationOnScreen
     val startX = origin.x + window.width / 2
     val startY = origin.y + window.height / 2 + 18
@@ -383,7 +383,7 @@ private fun exerciseDragPan(robot: Robot, window: AwtWindow) {
     try {
         repeat(10) { step ->
             robot.mouseMove(startX + (step + 1) * 10, startY + (step + 1) * 4)
-            Thread.sleep(30)
+            delay(30)
         }
     } finally {
         robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
@@ -477,6 +477,14 @@ private fun pixelDifferenceRatio(
     }
 
     return if (total == 0L) 0.0 else changed.toDouble() / total.toDouble()
+}
+
+private fun runOnAwtEdtAndWait(block: () -> Unit) {
+    if (EventQueue.isDispatchThread()) {
+        block()
+    } else {
+        EventQueue.invokeAndWait(block)
+    }
 }
 
 private fun ensureNoAsyncFailure(asyncFailure: AtomicReference<Throwable?>) {
