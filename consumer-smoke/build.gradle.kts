@@ -31,6 +31,20 @@ application {
 }
 
 val smokeRenderApi = providers.environmentVariable("SMOKE_RENDER_API").orElse("SOFTWARE")
+val smokeSkikoVersion = providers.environmentVariable("SMOKE_SKIKO_VERSION").orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+
+if (smokeSkikoVersion != null) {
+    configurations.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.skiko") {
+                useVersion(smokeSkikoVersion)
+                because("Consumer smoke upgrade probe explicitly tests Skiko $smokeSkikoVersion")
+            }
+        }
+    }
+}
 
 tasks.withType<JavaExec>().configureEach {
     systemProperty("java.awt.headless", "false")
