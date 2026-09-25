@@ -13,15 +13,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -39,9 +39,15 @@ import org.jetbrains.letsPlot.core.util.MonolithicCommon.processRawSpecs
 import org.jetbrains.letsPlot.core.util.PlotThemeHelper
 import org.jetbrains.letsPlot.core.util.sizing.SizingPolicy.Companion.fitContainerSize
 import org.jetbrains.letsPlot.raster.view.PlotCanvasDrawable
+import java.awt.AWTEvent
 import java.awt.Cursor
 import java.awt.Desktop
+import java.awt.Toolkit
+import java.awt.event.AWTEventListener
+import java.awt.event.InputEvent
+import java.awt.event.MouseEvent as AwtMouseEvent
 import java.net.URI
+import java.util.concurrent.atomic.AtomicReference
 
 //import org.jetbrains.letsPlot.compose.util.NaiveLogger
 
@@ -50,7 +56,6 @@ private val LOG = PortableLogging.logger(name = "[PlotPanelRaw2]")
 
 private const val logRecompositions = false
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionName")
 @Composable
 fun PlotPanelComposeCanvas(
@@ -68,6 +73,10 @@ fun PlotPanelComposeCanvas(
 
     val density = LocalDensity.current.density
     val composeMouseEventMapper = remember { ComposeMouseEventMapper() }
+    val awtPointerBridgeEnabled = remember {
+        System.getenv("LETS_PLOT_AWT_POINTER_BRIDGE").equals("true", ignoreCase = true)
+    }
+    val canvasBoundsOnScreen = remember { AtomicReference<Rect?>(null) }
     // Update density on each recomposition to handle monitor DPI changes (e.g., drag between HIDPI/regular monitor)
 
     // Cache processed plot spec to avoid reprocessing the same raw spec on every recomposition.
@@ -149,6 +158,51 @@ fun PlotPanelComposeCanvas(
         }
     }
 
+
+    DisposableEffect(composeMouseEventMapper, density, awtPointerBridgeEnabled) {
+        if (!awtPointerBridgeEnabled) {
+            onDispose { }
+        } else {
+            val listener = AWTEventListener { event ->
+                val mouseEvent = event as? AwtMouseEvent ?: return@AWTEventListener
+                if (mouseEvent.id != AwtMouseEvent.MOUSE_MOVED &&
+                    mouseEvent.id != AwtMouseEvent.MOUSE_DRAGGED
+                ) {
+                    return@AWTEventListener
+                }
+
+                val bounds = canvasBoundsOnScreen.get() ?: return@AWTEventListener
+                val screenX = mouseEvent.xOnScreen.toFloat()
+                val screenY = mouseEvent.yOnScreen.toFloat()
+                if (!bounds.contains(Offset(screenX, screenY))) {
+                    return@AWTEventListener
+                }
+
+                val modifiers = mouseEvent.modifiersEx
+                composeMouseEventMapper.handleDesktopMouseMove(
+                    localX = screenX - bounds.left,
+                    localY = screenY - bounds.top,
+                    density = density,
+                    pressed = (modifiers and InputEvent.BUTTON1_DOWN_MASK) != 0,
+                    isCtrl = (modifiers and InputEvent.CTRL_DOWN_MASK) != 0,
+                    isAlt = (modifiers and InputEvent.ALT_DOWN_MASK) != 0,
+                    isShift = (modifiers and InputEvent.SHIFT_DOWN_MASK) != 0,
+                    isMeta = (modifiers and InputEvent.META_DOWN_MASK) != 0
+                )
+            }
+
+            Toolkit.getDefaultToolkit().addAWTEventListener(
+                listener,
+                AWTEvent.MOUSE_MOTION_EVENT_MASK
+            )
+
+            onDispose {
+                Toolkit.getDefaultToolkit().removeAWTEventListener(listener)
+                canvasBoundsOnScreen.set(null)
+            }
+        }
+    }
+
     Column(modifier = finalModifier) {
         if (GG_TOOLBAR in processedPlotSpec) {
             PlotToolbar(figureModel)
@@ -226,8 +280,16 @@ fun PlotPanelComposeCanvas(
                         .pointerInput(composeMouseEventMapper) {
                             composeMouseEventMapper.handlePointerInput(this)
                         }
-                        .onPointerEvent(PointerEventType.Move) { event ->
-                            composeMouseEventMapper.handlePointerEvent(event, density)
+                        .onGloballyPositioned { coordinates ->
+                            val origin = coordinates.localToScreen(Offset.Zero)
+                            canvasBoundsOnScreen.set(
+                                Rect(
+                                    left = origin.x,
+                                    top = origin.y,
+                                    right = origin.x + coordinates.size.width,
+                                    bottom = origin.y + coordinates.size.height
+                                )
+                            )
                         }
                         .pointerHoverIcon(PointerIcon(Cursor(Cursor.CROSSHAIR_CURSOR)))
                         .onSizeChanged { size ->
