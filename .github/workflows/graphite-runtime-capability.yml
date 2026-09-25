@@ -52,6 +52,45 @@ jobs:
             Select-Object Name, DriverVersion, AdapterRAM |
             Format-List | Out-String | Add-Content $report
           Get-Content $report
+      - name: Configure browser SwiftShader Vulkan ICD
+        shell: pwsh
+        run: |
+          $probeDir = "graphite-runtime-probe\build\probe"
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          $roots = @(
+            "$env:ProgramFiles\Google\Chrome\Application",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application",
+            "$env:ProgramFiles\Microsoft\Edge\Application",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          $icd = $roots |
+            ForEach-Object { Get-ChildItem -Path $_ -Filter 'vk_swiftshader_icd.json' -File -Recurse -ErrorAction SilentlyContinue } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if ($null -ne $icd) {
+            "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "VK_ICD_FILENAMES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_PROVIDER=browser-swiftshader" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "vulkan.provider=browser-swiftshader" | Add-Content $report
+            "vulkan.icd=$($icd.FullName)" | Add-Content $report
+
+            $json = Get-Content $icd.FullName -Raw | ConvertFrom-Json
+            $libraryPath = $json.ICD.library_path
+            $resolvedLibrary = Join-Path $icd.Directory.FullName $libraryPath
+            "vulkan.icd.library=$resolvedLibrary" | Add-Content $report
+            "vulkan.icd.library.exists=$(Test-Path $resolvedLibrary)" | Add-Content $report
+            if (!(Test-Path $resolvedLibrary)) {
+              throw "Browser SwiftShader ICD manifest found, but its library is missing: $resolvedLibrary"
+            }
+          } else {
+            "GRAPHITE_VULKAN_PROVIDER=system" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "vulkan.provider=system" | Add-Content $report
+            "vulkan.icd=not-found" | Add-Content $report
+          }
+
+          Get-Content $report
 
       - name: Verify Skiko Graphite Windows runtime artifacts
         shell: pwsh
@@ -78,7 +117,7 @@ jobs:
           .\gradlew.bat -p graphite-runtime-probe `
             "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
             "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
-            clean graphiteRuntimeCapabilityProbe --stacktrace
+            graphiteRuntimeCapabilityProbe --stacktrace
 
       - name: Verify runtime capability contract
         shell: pwsh
