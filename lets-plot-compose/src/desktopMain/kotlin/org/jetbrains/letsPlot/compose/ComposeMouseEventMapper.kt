@@ -36,7 +36,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     override suspend fun PointerInputScope.invoke() {
         awaitPointerEventScope {
             while (true) {
-                handlePointerEvent(awaitPointerEvent(PointerEventPass.Initial), density)
+                // Main is the documented/default pointer-input pass. Using Initial here can\n                // observe Enter without subsequent hover Move events on Compose 1.13 preview.\n                handlePointerEvent(awaitPointerEvent(), density)
             }
         }
     }
