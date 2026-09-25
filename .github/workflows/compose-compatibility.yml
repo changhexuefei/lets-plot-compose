@@ -640,9 +640,14 @@ jobs:
             throw "Compose Desktop 1.13.0-alpha01 was not resolved by the preview consumer"
           }
 
-          $skikoPattern = "org\.jetbrains\.skiko:skiko-awt-runtime-all:0\.152\.0-alpha02"
-          if (!(Select-String -Path $report -Pattern $skikoPattern -Quiet)) {
-            throw "Expected official Skiko 0.152.0-alpha02 runtime-all artifact was not resolved"
+          $skikoCorePattern = "org\.jetbrains\.skiko:skiko:0\.152\.0-alpha02"
+          if (!(Select-String -Path $report -Pattern $skikoCorePattern -Quiet)) {
+            throw "Expected official Skiko core 0.152.0-alpha02 was not resolved"
+          }
+
+          $skikoAwtPattern = "org\.jetbrains\.skiko:skiko-awt:0\.152\.0-alpha02"
+          if (!(Select-String -Path $report -Pattern $skikoAwtPattern -Quiet)) {
+            throw "Expected official Skiko AWT 0.152.0-alpha02 was not resolved"
           }
 
           if (Select-String -Path $report -Pattern "org\.jetbrains\.skiko:.*:0\.153\.0" -Quiet) {
@@ -672,7 +677,7 @@ jobs:
             "frontend.compiled.compose.version=$env:SMOKE_COMPOSE_VERSION",
             "frontend.artifact=$env:SMOKE_LETS_PLOT_COMPOSE_ARTIFACT",
             "skiko.expected=$env:SMOKE_EXPECTED_SKIKO_VERSION",
-            "skiko.runtime.artifact=skiko-awt-runtime-all",
+            "skiko.modules=skiko,skiko-awt",
             "skiko.override=none",
             "comparison.control=windows-jdk21-software",
             "comparison.key=checkpoint.filename",
