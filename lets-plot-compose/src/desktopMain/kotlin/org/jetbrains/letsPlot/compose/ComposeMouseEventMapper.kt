@@ -36,15 +36,43 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     override suspend fun PointerInputScope.invoke() {
         awaitPointerEventScope {
             while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Initial)
-                // Desktop hover moves are handled by Modifier.onPointerEvent in
-                // PlotPanelComposeCanvas. Keep the coroutine path for all other
-                // pointer events so Move is never dispatched twice.
-                if (event.type != PointerEventType.Move) {
-                    handlePointerEvent(event, density)
-                }
+                handlePointerEvent(awaitPointerEvent(PointerEventPass.Initial), density)
             }
         }
+    }
+
+
+    internal fun handleDesktopMouseMove(
+        localX: Float,
+        localY: Float,
+        density: Float,
+        pressed: Boolean,
+        isCtrl: Boolean,
+        isAlt: Boolean,
+        isShift: Boolean,
+        isMeta: Boolean
+    ) {
+        val vector = Vector(
+            ((localX / density) - offsetX).roundToInt(),
+            ((localY / density) - offsetY).roundToInt()
+        )
+        val modifiers = KeyModifiers(
+            isCtrl = isCtrl,
+            isAlt = isAlt,
+            isShift = isShift,
+            isMeta = isMeta
+        )
+
+        if (pointerTraceEnabled && pointerTraceCount < 40) {
+            println(
+                "LETS_PLOT_POINTER_TRACE type=Move source=awt " +
+                    "position=$localX,$localY density=$density " +
+                    "adjusted=${vector.x},${vector.y} pressed=$pressed"
+            )
+            pointerTraceCount++
+        }
+
+        dispatchMove(vector, pressed, modifiers, "awt")
     }
 
     internal fun handlePointerEvent(event: PointerEvent, density: Float) {
@@ -94,13 +122,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                 mouseEventPeer.dispatch(MOUSE_RELEASED, mouseEvent)
             }
 
-            PointerEventType.Move -> {
-                if (change.pressed) {
-                    mouseEventPeer.dispatch(MOUSE_DRAGGED, mouseEvent)
-                } else {
-                    mouseEventPeer.dispatch(MOUSE_MOVED, mouseEvent)
-                }
-            }
+            PointerEventType.Move -> dispatchMove(vector, change.pressed, modifiers, "compose")
 
             PointerEventType.Enter -> mouseEventPeer.dispatch(MOUSE_ENTERED, mouseEvent)
             PointerEventType.Exit -> mouseEventPeer.dispatch(MOUSE_LEFT, mouseEvent)
@@ -122,6 +144,26 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                 )
                 mouseEventPeer.dispatch(MOUSE_WHEEL_ROTATED, wheelMouseEvent)
             }
+        }
+    }
+
+
+    private fun dispatchMove(
+        vector: Vector,
+        pressed: Boolean,
+        modifiers: KeyModifiers,
+        source: String
+    ) {
+        val mouseEvent = MouseEvent(
+            vector.x,
+            vector.y,
+            if (pressed) Button.LEFT else Button.NONE,
+            modifiers
+        )
+        if (pressed) {
+            mouseEventPeer.dispatch(MOUSE_DRAGGED, mouseEvent)
+        } else {
+            mouseEventPeer.dispatch(MOUSE_MOVED, mouseEvent)
         }
     }
 
