@@ -394,31 +394,6 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Run standalone consumer with Skiko candidate
-        working-directory: compose
-        shell: pwsh
-        env:
-          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\\consumer-bundle\\core
-          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\\consumer-bundle\\kotlin
-          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\\consumer-bundle\\compose
-          SMOKE_OUTPUT_DIR: ${{ github.workspace }}\\compose\\consumer-smoke\\build\\smoke
-        run: .\\gradlew.bat -p consumer-smoke clean classes run --stacktrace
-
-      - name: Verify candidate smoke summary
-        shell: pwsh
-        run: |
-          $summary = "compose\\consumer-smoke\\build\\smoke\\smoke-summary.txt"
-          if (!(Test-Path $summary)) {
-            throw "Candidate smoke summary was not created: $summary"
-          }
-          Get-Content $summary
-          if (!(Select-String -Path $summary -Pattern "^result=PASS$" -Quiet)) {
-            throw "Candidate smoke summary does not contain result=PASS"
-          }
-          if (!(Select-String -Path $summary -Pattern "^renderApi=SOFTWARE$" -Quiet)) {
-            throw "Candidate smoke did not use the SOFTWARE control renderer"
-          }
-
       - name: Capture and verify Skiko candidate resolution
         working-directory: compose
         shell: pwsh
@@ -427,7 +402,10 @@ jobs:
           LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\\consumer-bundle\\kotlin
           LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\\consumer-bundle\\compose
         run: |
-          $report = "consumer-smoke\\build\\smoke\\renderer-dependencies.txt"
+          $smokeDir = "consumer-smoke\\build\\smoke"
+          New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
+          $report = Join-Path $smokeDir "renderer-dependencies.txt"
+
           .\\gradlew.bat -p consumer-smoke dependencyInsight --dependency skiko --configuration runtimeClasspath --console=plain |
             Tee-Object -FilePath $report
 
@@ -440,52 +418,91 @@ jobs:
             throw "Skiko 0.153.0 Windows runtime was not resolved by the candidate consumer"
           }
 
-      - name: Build Skiko candidate baseline manifest
+      - name: Verify Compose 1.12.1 rejects Skiko 0.153.0 ABI
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\\consumer-bundle\\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\\consumer-bundle\\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\\consumer-bundle\\compose
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}\\compose\\consumer-smoke\\build\\smoke
+        run: |
+          $smokeDir = "consumer-smoke\\build\\smoke"
+          New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
+          $runtimeLog = Join-Path $smokeDir "candidate-runtime.log"
+          $compatibility = Join-Path $smokeDir "compatibility.txt"
+
+          $previousNativePreference = $PSNativeCommandUseErrorActionPreference
+          $PSNativeCommandUseErrorActionPreference = $false
+          try {
+            .\\gradlew.bat -p consumer-smoke clean classes run --stacktrace 2>&1 |
+              Tee-Object -FilePath $runtimeLog
+            $candidateExitCode = $LASTEXITCODE
+          }
+          finally {
+            $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+          }
+
+          if ($candidateExitCode -eq 0) {
+            throw "Skiko 0.153.0 unexpectedly ran with Compose 1.12.1. Update this ABI guard to a positive runtime probe."
+          }
+
+          $knownAbiPattern = "java\.lang\.NoSuchMethodError:.*org\.jetbrains\.skiko\.SkiaLayer\.<init>"
+          if (!(Select-String -Path $runtimeLog -Pattern $knownAbiPattern -Quiet)) {
+            throw "Candidate failed for an unexpected reason; expected the known SkiaLayer constructor ABI mismatch."
+          }
+
+          @(
+            "result=EXPECTED_INCOMPATIBLE",
+            "compose.version=1.12.1",
+            "compose.expected.skiko=0.150.1",
+            "candidate.skiko=$env:SMOKE_SKIKO_VERSION",
+            "renderer.requested=$env:SMOKE_RENDER_API",
+            "failure.type=java.lang.NoSuchMethodError",
+            "failure.symbol=org.jetbrains.skiko.SkiaLayer.<init>",
+            "runtime.exit_code=$candidateExitCode",
+            "workflow.sha=${{ github.sha }}",
+            "workflow.run_id=${{ github.run_id }}"
+          ) | Set-Content -Path $compatibility -Encoding UTF8
+
+          Get-Content $compatibility
+
+      - name: Build Skiko ABI evidence manifest
         shell: pwsh
         run: |
           $smokeDir = "compose\\consumer-smoke\\build\\smoke"
           $manifest = Join-Path $smokeDir "baseline-manifest.txt"
-          $screenshots = @(Get-ChildItem -Path $smokeDir -Filter "*.png" | Sort-Object Name)
 
-          if ($screenshots.Count -ne 9) {
-            throw "Expected 9 candidate baseline screenshots, found $($screenshots.Count)"
-          }
-
-          $lines = @(
+          @(
             "schema=1",
             "baseline.id=$env:SMOKE_BASELINE_ID",
-            "probe.type=skiko-upgrade-readiness",
+            "probe.type=skiko-abi-compatibility",
+            "probe.result=EXPECTED_INCOMPATIBLE",
             "platform=windows",
             "jdk=21",
             "renderer.requested=$env:SMOKE_RENDER_API",
+            "compose.version=1.12.1",
+            "compose.expected.skiko=0.150.1",
             "skiko.override=$env:SMOKE_SKIKO_VERSION",
+            "comparison.control=windows-jdk21-software",
+            "comparison.visual_evidence=not-applicable-before-runtime-linkage",
             "workflow.sha=${{ github.sha }}",
             "workflow.run_id=${{ github.run_id }}",
-            "comparison.control=windows-jdk21-software",
-            "comparison.key=checkpoint.filename",
-            "comparison.required_screenshots=9",
-            "comparison.hash_role=provenance-only",
             "artifact.retention_days=90"
-          )
+          ) | Set-Content -Path $manifest -Encoding UTF8
 
-          foreach ($screenshot in $screenshots) {
-            $hash = (Get-FileHash -Path $screenshot.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            $lines += "sha256.$($screenshot.Name)=$hash"
-          }
-
-          $lines | Set-Content -Path $manifest -Encoding UTF8
           Get-Content $manifest
 
-      - name: Upload Skiko candidate regression evidence
+      - name: Upload Skiko ABI compatibility evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: graphite-skiko-baseline-${{ env.SMOKE_BASELINE_ID }}-${{ github.sha }}
+          name: skiko-abi-compatibility-compose-1.12.1-skiko-${{ env.SMOKE_SKIKO_VERSION }}-${{ github.sha }}
           path: |
-            compose/consumer-smoke/build/smoke/*.png
-            compose/consumer-smoke/build/smoke/smoke-summary.txt
+            compose/consumer-smoke/build/smoke/compatibility.txt
             compose/consumer-smoke/build/smoke/baseline-manifest.txt
             compose/consumer-smoke/build/smoke/renderer-dependencies.txt
+            compose/consumer-smoke/build/smoke/candidate-runtime.log
             consumer-bundle/manifest.txt
             consumer-bundle/core-manifest.txt
           if-no-files-found: warn
