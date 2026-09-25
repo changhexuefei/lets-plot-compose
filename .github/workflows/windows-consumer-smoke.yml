@@ -1,6 +1,8 @@
 name: Windows JDK 21 consumer smoke
 
 on:
+  push:
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:

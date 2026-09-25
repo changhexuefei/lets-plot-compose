@@ -1,6 +1,8 @@
 name: Kotlin 2.4.20 + Compose 1.12.1 compatibility
 
 on:
+  push:
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
