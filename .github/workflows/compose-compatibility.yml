@@ -537,6 +537,7 @@ jobs:
       SMOKE_TOOLTIP_DWELL_MS: '700'
       SMOKE_TOOLTIP_X_RADIUS: '160'
       SMOKE_TOOLTIP_Y_RADIUS: '120'
+      SMOKE_TOOLTIP_SYNTHETIC_FALLBACK: 'true'
       LETS_PLOT_POINTER_TRACE: 'true'
       SMOKE_BASELINE_ID: windows-jdk21-software-compose-1.13.0-alpha01
     steps:
