@@ -69,3 +69,18 @@ For an upgrade PR:
 5. investigate missing checks, behavior failures, unexpected geometry changes, blank rendering, clipping, DPI regressions, or lifecycle regressions before accepting the upgrade.
 
 This contract is deliberately renderer-neutral so it can survive changes in how Skiko exposes Skia/Graphite backends.
+
+
+## Skiko upgrade readiness probe
+
+Before experimenting with a Graphite rendering path, CI keeps the canonical `windows-jdk21-software` control unchanged and runs a second Windows/JDK 21 consumer with an explicit Skiko candidate override.
+
+The initial candidate is Skiko `0.153.0`. The probe:
+
+1. keeps `SMOKE_RENDER_API=SOFTWARE` so only the Skiko version changes;
+2. runs the same nine executable consumer checks as the canonical control;
+3. verifies that the Windows x64 Skiko runtime actually resolves to the candidate version;
+4. writes `skiko.override` and the control baseline ID into the candidate manifest;
+5. uploads a separate 90-day artifact using baseline ID `windows-jdk21-software-skiko-0.153.0`.
+
+A candidate failure is treated as a Skiko compatibility finding, not as evidence about Graphite. Graphite integration is a later probe only after this software-renderer upgrade probe passes.
