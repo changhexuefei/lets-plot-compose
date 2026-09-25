@@ -102,7 +102,7 @@ fun main() {
             try {
                 val robot = Robot().apply {
                     autoDelay = 70
-                    isAutoWaitForIdle = true
+                    isAutoWaitForIdle = false
                 }
 
                 phase = "render"
