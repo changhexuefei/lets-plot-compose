@@ -13,14 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -49,7 +47,6 @@ private val LOG = PortableLogging.logger(name = "[PlotPanelRaw2]")
 
 private const val logRecompositions = false
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionName")
 @Composable
 fun PlotPanelComposeCanvas(
@@ -222,25 +219,10 @@ fun PlotPanelComposeCanvas(
                 Canvas(
                     modifier = modifier
                         .fillMaxSize()
+                        .pointerInput(composeMouseEventMapper) {
+                            composeMouseEventMapper.handlePointerInput(this)
+                        }
                         .pointerHoverIcon(PointerIcon(Cursor(Cursor.CROSSHAIR_CURSOR)))
-                        .onPointerEvent(PointerEventType.Press) {
-                            composeMouseEventMapper.handlePointerEvent(it, density)
-                        }
-                        .onPointerEvent(PointerEventType.Release) {
-                            composeMouseEventMapper.handlePointerEvent(it, density)
-                        }
-                        .onPointerEvent(PointerEventType.Move) {
-                            composeMouseEventMapper.handlePointerEvent(it, density)
-                        }
-                        .onPointerEvent(PointerEventType.Enter) {
-                            composeMouseEventMapper.handlePointerEvent(it, density)
-                        }
-                        .onPointerEvent(PointerEventType.Exit) {
-                            composeMouseEventMapper.handlePointerEvent(it, density)
-                        }
-                        .onPointerEvent(PointerEventType.Scroll) {
-                            composeMouseEventMapper.handlePointerEvent(it, density)
-                        }
                         .onSizeChanged { size ->
                             // Convert canvas logical pixels (from Compose layout) to physical pixels (plot SVG pixels)
                             plotDrawable.resize(size.width / density, size.height / density)
