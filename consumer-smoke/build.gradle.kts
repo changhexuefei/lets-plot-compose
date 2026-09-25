@@ -30,7 +30,9 @@ application {
     mainClass.set("smoke.ConsumerSmokeKt")
 }
 
+val smokeRenderApi = providers.environmentVariable("SMOKE_RENDER_API").orElse("SOFTWARE")
+
 tasks.withType<JavaExec>().configureEach {
     systemProperty("java.awt.headless", "false")
-    systemProperty("skiko.renderApi", "SOFTWARE")
+    systemProperty("skiko.renderApi", smokeRenderApi.get())
 }
