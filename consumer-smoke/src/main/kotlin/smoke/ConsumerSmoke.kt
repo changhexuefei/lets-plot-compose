@@ -166,23 +166,23 @@ fun main() {
                 ensureNoAsyncFailure(asyncFailure)
                 checkpoint("pan")
 
+                phase = "density-1.25"
+                densityScale = 1.25f
+                delay(1_000)
+                val density125 = captureWindow(robot, firstWindow, outputDir.resolve("07-density-1.25.png"))
+                assertImageHasContent(density125)
+                ensureNoAsyncFailure(asyncFailure)
+                checkpoint("density-1.25")
+
                 phase = "density-1.5"
                 densityScale = 1.5f
                 delay(1_000)
-                val density15 = captureWindow(robot, firstWindow, outputDir.resolve("07-density-1.5.png"))
-                assertImageHasContent(density15)
-                ensureNoAsyncFailure(asyncFailure)
-                checkpoint("density-1.5")
-
-                phase = "density-2.0"
-                densityScale = 2.0f
-                delay(1_000)
-                val density20 = captureWindow(robot, firstWindow, outputDir.resolve("08-density-2.0.png"))
-                check(pixelDifferenceRatio(density15, density20) > IMAGE_CHANGE_THRESHOLD) {
-                    "Changing LocalDensity from 1.5x to 2.0x did not visibly re-render the consumer."
+                val density15 = captureWindow(robot, firstWindow, outputDir.resolve("08-density-1.5.png"))
+                check(pixelDifferenceRatio(density125, density15) > IMAGE_CHANGE_THRESHOLD) {
+                    "Changing LocalDensity from 1.25x to 1.5x did not visibly re-render the consumer."
                 }
                 ensureNoAsyncFailure(asyncFailure)
-                checkpoint("density-2.0")
+                checkpoint("density-1.5")
 
                 phase = "close"
                 EventQueue.invokeAndWait {
@@ -214,7 +214,7 @@ fun main() {
                         appendLine("os.name=${System.getProperty("os.name")}")
                         appendLine("os.version=${System.getProperty("os.version")}")
                         appendLine("renderApi=${System.getProperty("skiko.renderApi")}")
-                        appendLine("checks=render,resize,tooltip,zoom,pan,density-1.5,density-2.0,close,reopen")
+                        appendLine("checks=render,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
                     }
                 )
 
