@@ -24,7 +24,7 @@ jobs:
       JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
       PROBE_COMPOSE_VERSION: '1.13.0-alpha01'
       PROBE_GRAPHITE_SKIKO_VERSION: '0.153.0'
-      PROBE_EXPECTATION: 'EXPECTED_INCOMPATIBLE'
+      PROBE_EXPECTATION: 'READY_CANDIDATE'
 
     steps:
       - name: Checkout
