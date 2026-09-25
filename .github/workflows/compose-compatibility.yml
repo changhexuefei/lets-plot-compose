@@ -52,37 +52,15 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Configure Lets-Plot core
+      - name: Configure three-repository integration
         run: |
+          echo "LETS_PLOT_CORE_BUILD=${GITHUB_WORKSPACE}/core" >> "$GITHUB_ENV"
+
           cat > core/local.properties <<EOF
           enable_python_package=false
           architecture=x86_64
           EOF
 
-      - name: Publish Core JVM consumer artifacts
-        working-directory: core
-        run: >
-          ./gradlew
-          -Pbuild_release=true
-          -Penable_python_package=false
-          -Parchitecture=x86_64
-          :commons:publishJvmPublicationToMavenLocalRepository
-          :canvas:publishJvmPublicationToMavenLocalRepository
-          :datamodel:publishJvmPublicationToMavenLocalRepository
-          :plot-base:publishJvmPublicationToMavenLocalRepository
-          :plot-builder:publishJvmPublicationToMavenLocalRepository
-          :plot-stem:publishJvmPublicationToMavenLocalRepository
-          :plot-raster:publishJvmPublicationToMavenLocalRepository
-          :jvm-package:jvm-publish-common:publishJvmPublicationToMavenLocalRepository
-          :jvm-package:jvm-publish-common:publishKotlinMultiplatformPublicationToMavenLocalRepository
-          :platf-awt:publishPlatf-awtPublicationToMavenLocalRepository
-          :platf-batik:publishPlatf-batikPublicationToMavenLocalRepository
-          :jvm-package:jvm-publish-swing:publishLetsPlotJvmSwingPublicationToMavenLocalRepository
-          --stacktrace
-
-      - name: Configure Lets-Plot Kotlin API
-        run: |
-          echo "LETS_PLOT_CORE_BUILD=${GITHUB_WORKSPACE}/core" >> "$GITHUB_ENV"
           cat > kotlin-api/local.properties <<EOF
           sonatype.username=
           sonatype.password=
@@ -97,7 +75,7 @@ jobs:
           cat > compose/local.properties <<EOF
           sonatype.username=
           sonatype.password=
-          maven.repo.local=${GITHUB_WORKSPACE}/core/.maven-publish-dev-repo,${GITHUB_WORKSPACE}/kotlin-api/.maven-publish-dev-repo
+          maven.repo.local=${GITHUB_WORKSPACE}/kotlin-api/.maven-publish-dev-repo
           EOF
 
       - name: Compile Compose Desktop
@@ -124,14 +102,13 @@ jobs:
           :lets-plot-compose:publishKotlinMultiplatformPublicationToMavenLocalRepository
           --stacktrace
 
-      - name: Assemble consumer Maven bundle
+      - name: Assemble frontend Maven bundle
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p consumer-bundle/core consumer-bundle/kotlin consumer-bundle/compose
-          cp -R core/.maven-publish-dev-repo/. consumer-bundle/core/
-          cp -R kotlin-api/.maven-publish-dev-repo/. consumer-bundle/kotlin/
-          cp -R compose/.maven-publish-dev-repo/. consumer-bundle/compose/
+          mkdir -p frontend-bundle/kotlin frontend-bundle/compose
+          cp -R kotlin-api/.maven-publish-dev-repo/. frontend-bundle/kotlin/
+          cp -R compose/.maven-publish-dev-repo/. frontend-bundle/compose/
 
           {
             echo "lets-plot-core.version=4.11.1-SNAPSHOT"
@@ -144,18 +121,104 @@ jobs:
             echo "lets-plot-compose.sha=$(git -C compose rev-parse HEAD)"
             echo "workflow.sha=${GITHUB_SHA}"
             echo "workflow.run_id=${GITHUB_RUN_ID}"
-          } > consumer-bundle/manifest.txt
+          } > frontend-bundle/manifest.txt
 
-      - name: Upload consumer Maven bundle
+      - name: Upload frontend Maven bundle
         uses: actions/upload-artifact@v4
         with:
-          name: lets-plot-consumer-maven-${{ github.sha }}
-          path: consumer-bundle
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: frontend-bundle
+          if-no-files-found: error
+          retention-days: 3
+
+  core-jvm-bundle:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+    steps:
+      - name: Checkout lets-plot core only
+        uses: actions/checkout@v4
+        with:
+          repository: changhexuefei/lets-plot
+          ref: master
+          path: core
+
+      - name: Set up JDK 17 Core build runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Validate Core Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Core Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Configure Lets-Plot core
+        shell: pwsh
+        run: |
+          @"
+          enable_python_package=false
+          "@ | Set-Content -Path core/local.properties -Encoding UTF8
+
+      - name: Publish Core JVM consumer artifacts
+        working-directory: core
+        shell: pwsh
+        run: >
+          .\gradlew.bat
+          -Pbuild_release=true
+          -Penable_python_package=false
+          :commons:publishJvmPublicationToMavenLocalRepository
+          :commons:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :canvas:publishJvmPublicationToMavenLocalRepository
+          :canvas:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :datamodel:publishJvmPublicationToMavenLocalRepository
+          :datamodel:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-base:publishJvmPublicationToMavenLocalRepository
+          :plot-base:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-builder:publishJvmPublicationToMavenLocalRepository
+          :plot-builder:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-stem:publishJvmPublicationToMavenLocalRepository
+          :plot-stem:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-raster:publishJvmPublicationToMavenLocalRepository
+          :plot-raster:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishJvmPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :platf-awt:publishPlatf-awtPublicationToMavenLocalRepository
+          :platf-batik:publishPlatf-batikPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-swing:publishLetsPlotJvmSwingPublicationToMavenLocalRepository
+          --stacktrace
+
+      - name: Assemble Core Maven bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path core-bundle\core | Out-Null
+          Copy-Item -Recurse -Force core\.maven-publish-dev-repo\* core-bundle\core\
+
+          @"
+          lets-plot-core.version=4.11.1-SNAPSHOT
+          lets-plot-core.sha=$(git -C core rev-parse HEAD)
+          workflow.sha=${{ github.sha }}
+          workflow.run_id=${{ github.run_id }}
+          "@ | Set-Content -Path core-bundle\core-manifest.txt -Encoding UTF8
+
+      - name: Upload Core Maven bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: core-bundle
           if-no-files-found: error
           retention-days: 3
 
   windows-consumer-smoke:
-    needs: compose-compatibility
+    needs:
+      - compose-compatibility
+      - core-jvm-bundle
     runs-on: windows-latest
     timeout-minutes: 20
     env:
@@ -173,10 +236,16 @@ jobs:
             gradle/wrapper
           sparse-checkout-cone-mode: false
 
-      - name: Download published consumer Maven bundle
+      - name: Download frontend Maven bundle
         uses: actions/download-artifact@v4
         with:
-          name: lets-plot-consumer-maven-${{ github.sha }}
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
           path: consumer-bundle
 
       - name: Set up JDK 21 consumer runtime
@@ -221,5 +290,6 @@ jobs:
             compose/consumer-smoke/build/smoke/*.png
             compose/consumer-smoke/build/smoke/smoke-summary.txt
             consumer-bundle/manifest.txt
+            consumer-bundle/core-manifest.txt
           if-no-files-found: warn
           retention-days: 90
