@@ -345,3 +345,148 @@ jobs:
             consumer-bundle/core-manifest.txt
           if-no-files-found: warn
           retention-days: 90
+
+
+  windows-skiko-upgrade-probe:
+    needs:
+      - compose-compatibility
+      - core-jvm-bundle
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      SMOKE_RENDER_API: SOFTWARE
+      SMOKE_SKIKO_VERSION: '0.153.0'
+      SMOKE_BASELINE_ID: windows-jdk21-software-skiko-0.153.0
+    steps:
+      - name: Checkout standalone consumer only
+        uses: actions/checkout@v4
+        with:
+          path: compose
+          sparse-checkout: |
+            consumer-smoke
+            gradlew
+            gradlew.bat
+            gradle/wrapper
+          sparse-checkout-cone-mode: false
+
+      - name: Download frontend Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Set up JDK 21 consumer runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up probe Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Run standalone consumer with Skiko candidate
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\\consumer-bundle\\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\\consumer-bundle\\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\\consumer-bundle\\compose
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}\\compose\\consumer-smoke\\build\\smoke
+        run: .\\gradlew.bat -p consumer-smoke clean classes run --stacktrace
+
+      - name: Verify candidate smoke summary
+        shell: pwsh
+        run: |
+          $summary = "compose\\consumer-smoke\\build\\smoke\\smoke-summary.txt"
+          if (!(Test-Path $summary)) {
+            throw "Candidate smoke summary was not created: $summary"
+          }
+          Get-Content $summary
+          if (!(Select-String -Path $summary -Pattern "^result=PASS$" -Quiet)) {
+            throw "Candidate smoke summary does not contain result=PASS"
+          }
+          if (!(Select-String -Path $summary -Pattern "^renderApi=SOFTWARE$" -Quiet)) {
+            throw "Candidate smoke did not use the SOFTWARE control renderer"
+          }
+
+      - name: Capture and verify Skiko candidate resolution
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\\consumer-bundle\\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\\consumer-bundle\\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\\consumer-bundle\\compose
+        run: |
+          $report = "consumer-smoke\\build\\smoke\\renderer-dependencies.txt"
+          .\\gradlew.bat -p consumer-smoke dependencyInsight --dependency skiko --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+
+          if (!(Test-Path $report)) {
+            throw "Candidate renderer dependency report was not created: $report"
+          }
+
+          $runtimePattern = "org\.jetbrains\.skiko:skiko-awt-runtime-windows-x64:0\.153\.0"
+          if (!(Select-String -Path $report -Pattern $runtimePattern -Quiet)) {
+            throw "Skiko 0.153.0 Windows runtime was not resolved by the candidate consumer"
+          }
+
+      - name: Build Skiko candidate baseline manifest
+        shell: pwsh
+        run: |
+          $smokeDir = "compose\\consumer-smoke\\build\\smoke"
+          $manifest = Join-Path $smokeDir "baseline-manifest.txt"
+          $screenshots = @(Get-ChildItem -Path $smokeDir -Filter "*.png" | Sort-Object Name)
+
+          if ($screenshots.Count -ne 9) {
+            throw "Expected 9 candidate baseline screenshots, found $($screenshots.Count)"
+          }
+
+          $lines = @(
+            "schema=1",
+            "baseline.id=$env:SMOKE_BASELINE_ID",
+            "probe.type=skiko-upgrade-readiness",
+            "platform=windows",
+            "jdk=21",
+            "renderer.requested=$env:SMOKE_RENDER_API",
+            "skiko.override=$env:SMOKE_SKIKO_VERSION",
+            "workflow.sha=${{ github.sha }}",
+            "workflow.run_id=${{ github.run_id }}",
+            "comparison.control=windows-jdk21-software",
+            "comparison.key=checkpoint.filename",
+            "comparison.required_screenshots=9",
+            "comparison.hash_role=provenance-only",
+            "artifact.retention_days=90"
+          )
+
+          foreach ($screenshot in $screenshots) {
+            $hash = (Get-FileHash -Path $screenshot.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $lines += "sha256.$($screenshot.Name)=$hash"
+          }
+
+          $lines | Set-Content -Path $manifest -Encoding UTF8
+          Get-Content $manifest
+
+      - name: Upload Skiko candidate regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-skiko-baseline-${{ env.SMOKE_BASELINE_ID }}-${{ github.sha }}
+          path: |
+            compose/consumer-smoke/build/smoke/*.png
+            compose/consumer-smoke/build/smoke/smoke-summary.txt
+            compose/consumer-smoke/build/smoke/baseline-manifest.txt
+            compose/consumer-smoke/build/smoke/renderer-dependencies.txt
+            consumer-bundle/manifest.txt
+            consumer-bundle/core-manifest.txt
+          if-no-files-found: warn
+          retention-days: 90
