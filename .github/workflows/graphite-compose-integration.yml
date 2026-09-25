@@ -24,7 +24,7 @@ jobs:
       JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
       PROBE_COMPOSE_VERSION: '1.13.0-alpha01'
       PROBE_GRAPHITE_SKIKO_VERSION: '0.153.0'
-      PROBE_EXPECTATION: 'EXPECTED_INCOMPATIBLE'
+      PROBE_EXPECTATION: 'READY_CANDIDATE'
 
     steps:
       - name: Checkout
@@ -62,6 +62,15 @@ jobs:
           $graphitePattern = "org\.jetbrains\.skiko:skiko-graphite-awt:$([regex]::Escape($env:PROBE_GRAPHITE_SKIKO_VERSION))"
           if (!(Select-String -Path $report -Pattern $graphitePattern -Quiet)) {
             throw "Graphite AWT $env:PROBE_GRAPHITE_SKIKO_VERSION was not resolved"
+          }
+
+          $skikoCorePattern = "org\.jetbrains\.skiko:skiko:$([regex]::Escape($env:PROBE_GRAPHITE_SKIKO_VERSION))"
+          if (!(Select-String -Path $report -Pattern $skikoCorePattern -Quiet)) {
+            throw "Skiko core $env:PROBE_GRAPHITE_SKIKO_VERSION was not resolved on the shared Compose/Graphite classpath"
+          }
+          $skikoAwtPattern = "org\.jetbrains\.skiko:skiko-awt:$([regex]::Escape($env:PROBE_GRAPHITE_SKIKO_VERSION))"
+          if (!(Select-String -Path $report -Pattern $skikoAwtPattern -Quiet)) {
+            throw "Skiko AWT $env:PROBE_GRAPHITE_SKIKO_VERSION was not resolved on the shared Compose/Graphite classpath"
           }
 
       - name: Run isolated Compose + Graphite probe
