@@ -11,4 +11,4 @@ The smoke test validates the published compatibility chain:
 - Compose Multiplatform `1.12.1`
 - Windows + JDK 21 runtime
 
-Runtime checks cover first render, window resize, tooltip hover, Ctrl+Shift wheel zoom, Ctrl+Shift drag pan, synthetic 1.0x/1.5x/2.0x density changes, and closing/reopening the Compose window. Screenshots and a summary file are produced under `build/smoke`.
+Runtime checks cover first render, window resize, tooltip hover, Ctrl+Shift wheel zoom, Ctrl+Shift drag pan, synthetic 1.0x/1.25x/1.5x density changes, and closing/reopening the Compose window. Screenshots and a summary file are produced under `build/smoke`.
