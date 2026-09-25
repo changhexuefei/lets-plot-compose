@@ -6,10 +6,15 @@ pluginManagement {
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
     }
 
+    val smokeComposeVersion = System.getenv("SMOKE_COMPOSE_VERSION")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: "1.12.1"
+
     plugins {
         kotlin("jvm") version "2.4.20"
         kotlin("plugin.compose") version "2.4.20"
-        id("org.jetbrains.compose") version "1.12.1"
+        id("org.jetbrains.compose") version smokeComposeVersion
     }
 }
 
