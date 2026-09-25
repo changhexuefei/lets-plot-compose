@@ -163,6 +163,7 @@ fun PlotPanelComposeCanvas(
         if (!awtPointerBridgeEnabled) {
             onDispose { }
         } else {
+            var pointerInsideCanvas = false
             val listener = AWTEventListener { event ->
                 val mouseEvent = event as? AwtMouseEvent ?: return@AWTEventListener
                 if (mouseEvent.id != AwtMouseEvent.MOUSE_MOVED &&
@@ -174,14 +175,28 @@ fun PlotPanelComposeCanvas(
                 val bounds = canvasBoundsOnScreen.get() ?: return@AWTEventListener
                 val screenX = mouseEvent.xOnScreen.toFloat()
                 val screenY = mouseEvent.yOnScreen.toFloat()
-                if (!bounds.contains(Offset(screenX, screenY))) {
+                val localX = screenX - bounds.left
+                val localY = screenY - bounds.top
+                val insideCanvas = bounds.contains(Offset(screenX, screenY))
+
+                if (insideCanvas != pointerInsideCanvas) {
+                    composeMouseEventMapper.handleDesktopMouseBoundary(
+                        localX = localX,
+                        localY = localY,
+                        density = density,
+                        entered = insideCanvas
+                    )
+                    pointerInsideCanvas = insideCanvas
+                }
+
+                if (!insideCanvas) {
                     return@AWTEventListener
                 }
 
                 val modifiers = mouseEvent.modifiersEx
                 composeMouseEventMapper.handleDesktopMouseMove(
-                    localX = screenX - bounds.left,
-                    localY = screenY - bounds.top,
+                    localX = localX,
+                    localY = localY,
                     density = density,
                     pressed = (modifiers and InputEvent.BUTTON1_DOWN_MASK) != 0,
                     isCtrl = (modifiers and InputEvent.CTRL_DOWN_MASK) != 0,
