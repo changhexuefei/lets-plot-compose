@@ -78,12 +78,15 @@ jobs:
           :plot-raster:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :jvm-package:jvm-publish-common:publishJvmPublicationToMavenLocalRepository
           :jvm-package:jvm-publish-common:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :platf-awt:publishPlatf-awtPublicationToMavenLocalRepository
+          :platf-batik:publishPlatf-batikPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-swing:publishLetsPlotJvmSwingPublicationToMavenLocalRepository
           --stacktrace
 
       - name: Configure Lets-Plot Kotlin API
         shell: pwsh
         run: |
-          $coreRepo = Join-Path $env:GITHUB_WORKSPACE "core\.maven-publish-dev-repo"
+          $coreRepo = (Join-Path $env:GITHUB_WORKSPACE "core\.maven-publish-dev-repo").Replace('\','/')
           @"
           sonatype.username=
           sonatype.password=
@@ -98,8 +101,8 @@ jobs:
       - name: Configure Lets-Plot Compose
         shell: pwsh
         run: |
-          $coreRepo = Join-Path $env:GITHUB_WORKSPACE "core\.maven-publish-dev-repo"
-          $kotlinRepo = Join-Path $env:GITHUB_WORKSPACE "kotlin-api\.maven-publish-dev-repo"
+          $coreRepo = (Join-Path $env:GITHUB_WORKSPACE "core\.maven-publish-dev-repo").Replace('\','/')
+          $kotlinRepo = (Join-Path $env:GITHUB_WORKSPACE "kotlin-api\.maven-publish-dev-repo").Replace('\','/')
           @"
           sonatype.username=
           sonatype.password=
