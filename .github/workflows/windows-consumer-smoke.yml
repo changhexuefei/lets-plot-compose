@@ -1,0 +1,161 @@
+name: Windows JDK 21 consumer smoke
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-consumer-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-consumer-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+    steps:
+      - name: Checkout lets-plot-compose
+        uses: actions/checkout@v4
+        with:
+          path: compose
+
+      - name: Checkout lets-plot core
+        uses: actions/checkout@v4
+        with:
+          repository: changhexuefei/lets-plot
+          ref: master
+          path: core
+
+      - name: Checkout lets-plot-kotlin
+        uses: actions/checkout@v4
+        with:
+          repository: changhexuefei/lets-plot-kotlin
+          ref: master
+          path: kotlin-api
+
+      - name: Install JDK 11 toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Set up JDK 17 build runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Validate Gradle wrappers
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Configure Lets-Plot core
+        shell: pwsh
+        run: |
+          @"
+          enable_python_package=false
+          "@ | Set-Content -Path core/local.properties -Encoding UTF8
+
+      - name: Publish Core JVM consumer artifacts
+        working-directory: core
+        shell: pwsh
+        run: >
+          .\gradlew.bat
+          -Pbuild_release=true
+          -Penable_python_package=false
+          :commons:publishJvmPublicationToMavenLocalRepository
+          :commons:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :canvas:publishJvmPublicationToMavenLocalRepository
+          :canvas:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :datamodel:publishJvmPublicationToMavenLocalRepository
+          :datamodel:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-base:publishJvmPublicationToMavenLocalRepository
+          :plot-base:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-builder:publishJvmPublicationToMavenLocalRepository
+          :plot-builder:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-stem:publishJvmPublicationToMavenLocalRepository
+          :plot-stem:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-raster:publishJvmPublicationToMavenLocalRepository
+          :plot-raster:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishJvmPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :platf-awt:publishPlatf-awtPublicationToMavenLocalRepository
+          :platf-batik:publishPlatf-batikPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-swing:publishLetsPlotJvmSwingPublicationToMavenLocalRepository
+          --stacktrace
+
+      - name: Configure Lets-Plot Kotlin API
+        shell: pwsh
+        run: |
+          $coreBuild = (Join-Path $env:GITHUB_WORKSPACE "core").Replace('\','/')
+          "LETS_PLOT_CORE_BUILD=$coreBuild" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          @"
+          sonatype.username=
+          sonatype.password=
+          "@ | Set-Content -Path kotlin-api/local.properties -Encoding UTF8
+
+      - name: Publish Kotlin API JVM consumer artifacts
+        working-directory: kotlin-api
+        shell: pwsh
+        run: .\gradlew.bat :plot-api:publishJvmPublicationToMavenLocalRepository :plot-api:publishKotlinMultiplatformPublicationToMavenLocalRepository --stacktrace
+
+      - name: Configure Lets-Plot Compose
+        shell: pwsh
+        run: |
+          $coreRepo = (Join-Path $env:GITHUB_WORKSPACE "core\.maven-publish-dev-repo").Replace('\','/')
+          $kotlinRepo = (Join-Path $env:GITHUB_WORKSPACE "kotlin-api\.maven-publish-dev-repo").Replace('\','/')
+          @"
+          sonatype.username=
+          sonatype.password=
+          maven.repo.local=$coreRepo,$kotlinRepo
+          "@ | Set-Content -Path compose/local.properties -Encoding UTF8
+
+      - name: Publish Compose Desktop consumer artifacts
+        working-directory: compose
+        shell: pwsh
+        run: .\gradlew.bat :lets-plot-compose:publishDesktopPublicationToMavenLocalRepository :lets-plot-compose:publishKotlinMultiplatformPublicationToMavenLocalRepository --stacktrace
+
+      - name: Set up JDK 21 consumer runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build and run standalone consumer
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\core\.maven-publish-dev-repo
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\kotlin-api\.maven-publish-dev-repo
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose\.maven-publish-dev-repo
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}\compose\consumer-smoke\build\smoke
+        run: .\gradlew.bat -p consumer-smoke clean classes run --stacktrace
+
+      - name: Verify smoke summary
+        shell: pwsh
+        run: |
+          $summary = "compose\consumer-smoke\build\smoke\smoke-summary.txt"
+          if (!(Test-Path $summary)) {
+            throw "Smoke summary was not created: $summary"
+          }
+          Get-Content $summary
+          if (!(Select-String -Path $summary -Pattern "^result=PASS$" -Quiet)) {
+            throw "Smoke summary does not contain result=PASS"
+          }
+
+      - name: Upload smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-jdk21-consumer-smoke
+          path: |
+            compose/consumer-smoke/build/smoke/*.png
+            compose/consumer-smoke/build/smoke/smoke-summary.txt
+          if-no-files-found: warn
+          retention-days: 14
