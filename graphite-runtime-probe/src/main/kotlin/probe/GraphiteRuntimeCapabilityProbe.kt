@@ -42,6 +42,7 @@ fun main() {
         "java.version" to System.getProperty("java.version"),
         "skiko.version" to (System.getenv("GRAPHITE_SKIKO_VERSION") ?: "unknown"),
         "lwjgl.version" to (System.getenv("GRAPHITE_LWJGL_VERSION") ?: "unknown"),
+        "vulkan.provider" to (System.getenv("GRAPHITE_VULKAN_PROVIDER") ?: "unknown"),
         "compose.integration" to "NOT_ATTEMPTED",
         "plotpanel.integration" to "NOT_ATTEMPTED",
         "renderer.adoption" to "NOT_STARTED"
