@@ -114,13 +114,21 @@ fun main() {
                 checkpoint("render")
 
                 phase = "resize"
+                val initialWindowWidth = firstWindow.width
+                val initialWindowHeight = firstWindow.height
+                val requestedWidth = (initialWindowWidth - 140).coerceAtLeast(640)
+                val requestedHeight = (initialWindowHeight - 90).coerceAtLeast(480)
                 runOnAwtEdtAndWait {
-                    firstWindow.setSize(1180, 760)
-                    firstWindow.setLocation(80, 80)
+                    firstWindow.setSize(requestedWidth, requestedHeight)
+                    firstWindow.setLocation(60, 60)
                 }
                 delay(1_000)
-                check(firstWindow.width >= 1100 && firstWindow.height >= 700) {
-                    "Resize did not take effect: ${firstWindow.width}x${firstWindow.height}"
+                check(
+                    kotlin.math.abs(firstWindow.width - initialWindowWidth) >= 40 ||
+                        kotlin.math.abs(firstWindow.height - initialWindowHeight) >= 40
+                ) {
+                    "Resize did not take effect: before=${initialWindowWidth}x${initialWindowHeight}, " +
+                        "after=${firstWindow.width}x${firstWindow.height}"
                 }
                 ensureNoAsyncFailure(asyncFailure)
                 val resizeImage = captureWindow(robot, firstWindow, outputDir.resolve("02-resize.png"))
