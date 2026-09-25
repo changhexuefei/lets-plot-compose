@@ -87,3 +87,19 @@ Compose Multiplatform `1.12.1` is built against Skiko `0.150.1`. For Skiko `0.15
 The expected result is `EXPECTED_INCOMPATIBLE`, not a visual baseline. Because runtime linkage fails before PlotPanel can render, candidate screenshots are not meaningful. This guard makes the incompatibility explicit while keeping the canonical visual baseline and its nine checks intact.
 
 The next upgrade stage must test Compose and Skiko as a compatible pair. Graphite integration remains out of scope until such a pair passes the normal runtime smoke.
+
+
+## Compose 1.13 preview readiness probe
+
+The next forward-compatibility lane uses the official Compose Desktop dependency pair rather than overriding Skiko independently:
+
+- Compose Multiplatform: `1.13.0-alpha01`
+- Skiko: `0.152.0-alpha02`
+- Renderer: `SOFTWARE`
+- Runtime: Windows / JDK 21
+
+The preview probe changes only the standalone consumer's Compose Gradle plugin version through `SMOKE_COMPOSE_VERSION`. It does not set `SMOKE_SKIKO_VERSION`; Skiko must arrive transitively from Compose. CI then verifies the resolved `desktop-jvm-windows-x64` and `skiko-awt-runtime-windows-x64` modules before accepting the result.
+
+The probe runs the same nine executable checks and produces the same nine screenshot checkpoints as the canonical control. Its evidence uses a distinct baseline ID, `windows-jdk21-software-compose-1.13.0-alpha01`, and is retained for 90 days.
+
+This lane is a preview readiness signal only. It does not change the production Compose version or promote Graphite. A Graphite API availability probe is a separate follow-up after this lane passes.
