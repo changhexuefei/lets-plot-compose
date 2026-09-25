@@ -533,6 +533,7 @@ jobs:
       SMOKE_RENDER_API: SOFTWARE
       SMOKE_COMPOSE_VERSION: 1.13.0-alpha01
       SMOKE_EXPECTED_SKIKO_VERSION: 0.152.0-alpha02
+      SMOKE_LETS_PLOT_COMPOSE_ARTIFACT: lets-plot-compose-desktop
       SMOKE_TOOLTIP_STABLE_BASELINE: 'true'
       SMOKE_TOOLTIP_DWELL_MS: '700'
       SMOKE_TOOLTIP_X_RADIUS: '160'
@@ -584,14 +585,13 @@ jobs:
 
           Select-String -Path compose\gradle.properties -Pattern '^compose\.version='
 
-      - name: Publish Compose preview consumer artifacts
+      - name: Publish Compose preview Desktop artifact
         working-directory: compose
         shell: pwsh
         run: >
           .\gradlew.bat
           :lets-plot-compose:clean
           :lets-plot-compose:publishDesktopPublicationToMavenLocalRepository
-          :lets-plot-compose:publishKotlinMultiplatformPublicationToMavenLocalRepository
           --stacktrace
 
       - name: Run standalone consumer with Compose preview
@@ -670,6 +670,7 @@ jobs:
             "renderer.requested=$env:SMOKE_RENDER_API",
             "compose.version=$env:SMOKE_COMPOSE_VERSION",
             "frontend.compiled.compose.version=$env:SMOKE_COMPOSE_VERSION",
+            "frontend.artifact=$env:SMOKE_LETS_PLOT_COMPOSE_ARTIFACT",
             "skiko.expected=$env:SMOKE_EXPECTED_SKIKO_VERSION",
             "skiko.override=none",
             "comparison.control=windows-jdk21-software",
