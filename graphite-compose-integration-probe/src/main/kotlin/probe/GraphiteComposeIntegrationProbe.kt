@@ -73,6 +73,21 @@ fun main() {
                         if (drawObserved.get()) {
                             // Leave enough time for text/Skia drawing to execute on the UI thread.
                             delay(1_200)
+                            if (completed.compareAndSet(false, true)) {
+                                writeResult(
+                                    resultFile,
+                                    mapOf(
+                                        "result" to "READY_CANDIDATE",
+                                        "compose.window" to "STARTED",
+                                        "compose.canvas.draw" to true,
+                                        "graphite.class" to graphiteClass,
+                                        "graphite.context.creation" to "NOT_ATTEMPTED",
+                                        "plotpanel.integration" to "NOT_ATTEMPTED",
+                                        "renderer.adoption" to "NOT_STARTED"
+                                    )
+                                )
+                                println("GRAPHITE_COMPOSE_RESULT READY_CANDIDATE")
+                            }
                             exitApplication()
                             return@LaunchedEffect
                         }
