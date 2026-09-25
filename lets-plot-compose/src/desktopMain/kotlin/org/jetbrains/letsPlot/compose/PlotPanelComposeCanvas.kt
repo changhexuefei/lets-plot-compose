@@ -24,11 +24,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import org.jetbrains.letsPlot.commons.geometry.DoubleVector
 import org.jetbrains.letsPlot.commons.logging.PortableLogging
-import org.jetbrains.letsPlot.commons.registration.CompositeRegistration
 import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.letsPlot.compose.canvas.SkiaCanvasPeer
 import org.jetbrains.letsPlot.compose.canvas.SkiaContext2d
 import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
+import org.jetbrains.letsPlot.core.interact.event.ToolEventDispatcher
 import org.jetbrains.letsPlot.core.spec.Option.Meta.Kind.GG_TOOLBAR
 import org.jetbrains.letsPlot.core.spec.config.PlotConfig
 import org.jetbrains.letsPlot.core.spec.front.SpecOverrideUtil.applySpecOverride
@@ -94,16 +94,17 @@ fun PlotPanelComposeCanvas(
         }
     }
 
-    val plotComponentRegistrations = remember(plotDrawable) {
-        plotDrawable.onHrefClick(::browseLink)
-        CompositeRegistration(
-            // trigger recomposition on repaint request
-            plotDrawable.onRepaintRequested { redrawTrigger++ },
-            plotDrawable.mapToCanvas(skiaCanvasPeer),
-            Registration.onRemove {
-                plotDrawable.onHrefClick(handler = {})
-            }
-        )
+    val repaintRegistration = remember(plotDrawable) {
+        // Trigger recomposition on repaint request.
+        plotDrawable.onRepaintRequested { redrawTrigger++ }
+    }
+    val canvasRegistration = remember(plotDrawable, skiaCanvasPeer) {
+        plotDrawable.mapToCanvas(skiaCanvasPeer)
+    }
+    // Tracks only the dispatcher installed by this PlotPanel instance.
+    // Do not use Compose state here: ownership changes should not trigger recomposition.
+    val ownedToolEventDispatcher = remember(plotDrawable) {
+        arrayOfNulls<ToolEventDispatcher>(1)
     }
 
     // Background
@@ -122,16 +123,25 @@ fun PlotPanelComposeCanvas(
     }
 
 
-    DisposableEffect(plotComponentRegistrations) {
+    DisposableEffect(plotDrawable, figureModel, repaintRegistration, canvasRegistration) {
+        plotDrawable.onHrefClick(::browseLink)
+
         onDispose {
-            // Try/catch to ensure that any exception in dispose() does not break the Composable lifecycle
-            // Otherwise, the app window gets unclosable.
-            try {
-                plotComponentRegistrations.dispose()
-                //plotCanvasFigure2.dispose()
-            } catch (e: Exception) {
-                LOG.error(e) { "plotComponentRegistrations.dispose() failed: ${e.message}" }
+            // Clear only the dispatcher owned by this PlotPanel instance. A replacement
+            // composition may already have installed a newer dispatcher in the same model.
+            val dispatcher = ownedToolEventDispatcher[0]
+            if (dispatcher != null && figureModel.toolEventDispatcher === dispatcher) {
+                figureModel.toolEventDispatcher = null
             }
+            ownedToolEventDispatcher[0] = null
+
+            plotDrawable.onHrefClick(handler = {})
+
+            // Dispose registrations independently. Some renderer mappings may already have
+            // released an internal registration during a remap; one duplicate must not stop
+            // the remaining cleanup from running.
+            disposeRegistrationSafely("canvas", canvasRegistration)
+            disposeRegistrationSafely("repaint", repaintRegistration)
         }
     }
 
@@ -180,11 +190,11 @@ fun PlotPanelComposeCanvas(
                                 }
                             }
 
-                            // Connect the figure model to the plot component
-                            figureModel.toolEventDispatcher = plotDrawable.toolEventDispatcher
-                            plotComponentRegistrations.add(Registration.onRemove {
-                                figureModel.toolEventDispatcher = null
-                            })
+                            // Connect the figure model to the plot component and remember
+                            // exactly which dispatcher this composition owns.
+                            val dispatcher = plotDrawable.toolEventDispatcher
+                            figureModel.toolEventDispatcher = dispatcher
+                            ownedToolEventDispatcher[0] = dispatcher
 
                             val plotWidth = plotDrawable.size.x
                             val plotHeight = plotDrawable.size.y
@@ -230,6 +240,17 @@ fun PlotPanelComposeCanvas(
                 }
             }
         }
+    }
+}
+
+
+private fun disposeRegistrationSafely(name: String, registration: Registration) {
+    try {
+        registration.dispose()
+    } catch (e: Exception) {
+        // Cleanup is best-effort and must continue for the other registrations.
+        // In particular, renderer remapping can make a nested registration already removed.
+        LOG.error(e) { "$name registration dispose failed: ${e.message}" }
     }
 }
 
