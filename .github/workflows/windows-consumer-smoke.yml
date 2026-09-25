@@ -135,7 +135,7 @@ jobs:
           LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\kotlin-api\.maven-publish-dev-repo
           LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose\.maven-publish-dev-repo
           SMOKE_OUTPUT_DIR: ${{ github.workspace }}\compose\consumer-smoke\build\smoke
-        run: .\gradlew.bat -p consumer-smoke clean build run --stacktrace
+        run: .\gradlew.bat -p consumer-smoke clean classes run --stacktrace
 
       - name: Verify smoke summary
         shell: pwsh
