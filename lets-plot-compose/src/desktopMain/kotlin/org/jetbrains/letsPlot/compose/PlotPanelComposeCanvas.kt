@@ -224,7 +224,9 @@ fun PlotPanelComposeCanvas(
                             // Convert canvas logical pixels (from Compose layout) to physical pixels (plot SVG pixels)
                             plotDrawable.resize(size.width / density, size.height / density)
                         }
-                        .pointerInput(composeMouseEventMapper, composeMouseEventMapper)
+                        .pointerInput(composeMouseEventMapper) {
+                            composeMouseEventMapper.handlePointerInput(this)
+                        }
                 ) {
                     // By reading redrawTrigger here, Compose knows to recompose
                     // this Canvas block whenever it changes.
