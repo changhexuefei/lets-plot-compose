@@ -575,10 +575,11 @@ jobs:
           $props = $props -replace '^compose\.version=.*$', "compose.version=$env:SMOKE_COMPOSE_VERSION"
           $props | Set-Content compose\gradle.properties -Encoding UTF8
 
+          $repoRoot = "${{ github.workspace }}" -replace '\\', '/'
           @"
           sonatype.username=
           sonatype.password=
-          maven.repo.local=${{ github.workspace }}\consumer-bundle\core,${{ github.workspace }}\consumer-bundle\kotlin
+          maven.repo.local=$repoRoot/consumer-bundle/core,$repoRoot/consumer-bundle/kotlin
           "@ | Set-Content -Path compose\local.properties -Encoding UTF8
 
           Select-String -Path compose\gradle.properties -Pattern '^compose\.version='
