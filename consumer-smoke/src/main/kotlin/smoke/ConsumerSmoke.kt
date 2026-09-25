@@ -74,7 +74,6 @@ fun main() {
         var showWindow by remember { mutableStateOf(true) }
         var windowGeneration by remember { mutableIntStateOf(0) }
         var densityScale by remember { mutableFloatStateOf(1.0f) }
-        var phase by remember { mutableStateOf("boot") }
 
         if (showWindow) {
             key(windowGeneration) {
@@ -91,8 +90,7 @@ fun main() {
                     }
 
                     SmokeContent(
-                        densityScale = densityScale,
-                        phase = phase
+                        densityScale = densityScale
                     )
                 }
             }
@@ -104,16 +102,12 @@ fun main() {
                     autoDelay = 70
                     isAutoWaitForIdle = false
                 }
-
-                phase = "render"
                 val firstWindow = awaitVisibleWindow(visibleWindow)
                 delay(2_500)
                 ensureNoAsyncFailure(asyncFailure)
                 val renderImage = captureWindow(robot, firstWindow, outputDir.resolve("01-render.png"))
                 assertImageHasContent(renderImage)
                 checkpoint("render")
-
-                phase = "resize"
                 val initialWindowWidth = firstWindow.width
                 val initialWindowHeight = firstWindow.height
                 val requestedWidth = (initialWindowWidth - 140).coerceAtLeast(640)
@@ -137,8 +131,6 @@ fun main() {
                     "Resize did not produce a visible plot/layout change."
                 }
                 checkpoint("resize")
-
-                phase = "tooltip-hover"
                 val tooltipBaseline = captureWindow(
                     robot,
                     firstWindow,
@@ -151,8 +143,6 @@ fun main() {
                 }
                 ensureNoAsyncFailure(asyncFailure)
                 checkpoint("tooltip")
-
-                phase = "zoom"
                 val beforeZoom = hoverImage
                 exerciseWheelZoom(robot, firstWindow)
                 delay(900)
@@ -162,8 +152,6 @@ fun main() {
                 }
                 ensureNoAsyncFailure(asyncFailure)
                 checkpoint("zoom")
-
-                phase = "pan"
                 val beforePan = afterZoom
                 exerciseDragPan(robot, firstWindow)
                 delay(900)
@@ -173,16 +161,12 @@ fun main() {
                 }
                 ensureNoAsyncFailure(asyncFailure)
                 checkpoint("pan")
-
-                phase = "density-1.25"
                 densityScale = 1.25f
                 delay(1_000)
                 val density125 = captureWindow(robot, firstWindow, outputDir.resolve("07-density-1.25.png"))
                 assertImageHasContent(density125)
                 ensureNoAsyncFailure(asyncFailure)
                 checkpoint("density-1.25")
-
-                phase = "density-1.5"
                 densityScale = 1.5f
                 delay(1_000)
                 val density15 = captureWindow(robot, firstWindow, outputDir.resolve("08-density-1.5.png"))
@@ -191,15 +175,11 @@ fun main() {
                 }
                 ensureNoAsyncFailure(asyncFailure)
                 checkpoint("density-1.5")
-
-                phase = "close"
                 runOnAwtEdtAndWait {
                     firstWindow.dispatchEvent(WindowEvent(firstWindow, WindowEvent.WINDOW_CLOSING))
                 }
                 awaitWindowClosed(visibleWindow, firstWindow)
                 checkpoint("close")
-
-                phase = "reopen"
                 densityScale = 1.0f
                 windowGeneration += 1
                 showWindow = true
@@ -243,8 +223,7 @@ fun main() {
 
 @Composable
 private fun SmokeContent(
-    densityScale: Float,
-    phase: String
+    densityScale: Float
 ) {
     val figure = remember { createFigure() }
     val figureModel = remember { PlotFigureModel() }
@@ -277,7 +256,7 @@ private fun SmokeContent(
                     .fillMaxSize()
                     .padding(12.dp)
             ) {
-                Text("Consumer smoke | phase=$phase | density=${"%.2f".format(densityScale)}x")
+                Text("Lets-Plot consumer smoke")
 
                 PlotPanel(
                     figure = figure,
