@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: windows-consumer-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-consumer-smoke:
     runs-on: windows-latest
@@ -35,12 +39,6 @@ jobs:
           ref: master
           path: kotlin-api
 
-      - name: Set up JDK 11 toolchain
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '11'
-
       - name: Set up JDK 17 build runtime
         uses: actions/setup-java@v4
         with:
@@ -57,10 +55,30 @@ jobs:
           enable_python_package=false
           "@ | Set-Content -Path core/local.properties -Encoding UTF8
 
-      - name: Publish Core 4.11.1-SNAPSHOT
+      - name: Publish Core JVM consumer artifacts
         working-directory: core
         shell: pwsh
-        run: .\gradlew.bat -Pbuild_release=true -Penable_python_package=false publishLetsPlotCoreModulesToMavenLocalRepository --stacktrace
+        run: >
+          .\gradlew.bat
+          -Pbuild_release=true
+          -Penable_python_package=false
+          :commons:publishJvmPublicationToMavenLocalRepository
+          :commons:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :canvas:publishJvmPublicationToMavenLocalRepository
+          :canvas:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :datamodel:publishJvmPublicationToMavenLocalRepository
+          :datamodel:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-base:publishJvmPublicationToMavenLocalRepository
+          :plot-base:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-builder:publishJvmPublicationToMavenLocalRepository
+          :plot-builder:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-stem:publishJvmPublicationToMavenLocalRepository
+          :plot-stem:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :plot-raster:publishJvmPublicationToMavenLocalRepository
+          :plot-raster:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishJvmPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          --stacktrace
 
       - name: Configure Lets-Plot Kotlin API
         shell: pwsh
@@ -72,10 +90,10 @@ jobs:
           maven.repo.local=$coreRepo
           "@ | Set-Content -Path kotlin-api/local.properties -Encoding UTF8
 
-      - name: Publish Kotlin API 4.15.1-SNAPSHOT
+      - name: Publish Kotlin API JVM consumer artifacts
         working-directory: kotlin-api
         shell: pwsh
-        run: .\gradlew.bat :plot-api:publishAllPublicationsToMavenLocalRepository --stacktrace
+        run: .\gradlew.bat :plot-api:publishJvmPublicationToMavenLocalRepository :plot-api:publishKotlinMultiplatformPublicationToMavenLocalRepository --stacktrace
 
       - name: Configure Lets-Plot Compose
         shell: pwsh
@@ -87,12 +105,11 @@ jobs:
           sonatype.password=
           maven.repo.local=$coreRepo,$kotlinRepo
           "@ | Set-Content -Path compose/local.properties -Encoding UTF8
-          Add-Content -Path compose/gradle.properties -Value "org.gradle.java.installations.fromEnv=JAVA_HOME_11_X64,JAVA_HOME_17_X64"
 
-      - name: Publish Compose 3.2.3-SNAPSHOT
+      - name: Publish Compose Desktop consumer artifacts
         working-directory: compose
         shell: pwsh
-        run: .\gradlew.bat :lets-plot-compose:publishAllPublicationsToMavenLocalRepository --stacktrace
+        run: .\gradlew.bat :lets-plot-compose:publishDesktopPublicationToMavenLocalRepository :lets-plot-compose:publishKotlinMultiplatformPublicationToMavenLocalRepository --stacktrace
 
       - name: Set up JDK 21 consumer runtime
         uses: actions/setup-java@v4
