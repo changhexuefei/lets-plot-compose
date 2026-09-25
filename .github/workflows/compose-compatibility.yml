@@ -286,6 +286,10 @@ jobs:
       - name: Capture Skiko renderer dependency report
         working-directory: compose
         shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\\consumer-bundle\\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\\consumer-bundle\\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\\consumer-bundle\\compose
         run: |
           $report = "consumer-smoke\\build\\smoke\\renderer-dependencies.txt"
           .\\gradlew.bat -p consumer-smoke dependencyInsight --dependency skiko --configuration runtimeClasspath --console=plain |
