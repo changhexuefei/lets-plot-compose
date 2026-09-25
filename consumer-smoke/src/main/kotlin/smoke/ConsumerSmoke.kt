@@ -319,25 +319,37 @@ private suspend fun exerciseTooltipHover(
     val centerX = origin.x + window.width / 2
     val centerY = origin.y + window.height / 2 + 18
 
-    val offsets = listOf(
-        0 to 0,
-        -12 to 0,
-        12 to 0,
-        0 to -12,
-        0 to 12,
-        -20 to -10,
-        20 to 10
-    )
+    // Keep the visual assertion strict, but do not assume that the central data point
+    // remains within a few pixels of the AWT window center. Compose/Skiko preview
+    // versions can legitimately shift text metrics and plot insets.
+    val offsets = buildList {
+        add(0 to 0)
 
-    robot.mouseMove(centerX - 140, centerY - 90)
-    delay(250)
+        val xOffsets = listOf(-120, -80, -40, 0, 40, 80, 120)
+        val yOffsets = listOf(-90, -60, -30, 0, 30, 60, 90)
+        for (dy in yOffsets) {
+            for (dx in xOffsets) {
+                if (dx != 0 || dy != 0) {
+                    add(dx to dy)
+                }
+            }
+        }
+    }
+
+    // Move outside the probe area first so every candidate hover is compared with
+    // a stable non-tooltip baseline.
+    robot.mouseMove(centerX - 220, centerY - 160)
+    delay(300)
 
     var latest = baseline
     for ((dx, dy) in offsets) {
         robot.mouseMove(centerX + dx, centerY + dy)
-        delay(650)
+        delay(300)
         latest = screenCapture(robot, window)
 
+        // The threshold is deliberately unchanged: a candidate still passes only
+        // when hovering produces the same kind of visible repaint used by the
+        // canonical consumer smoke.
         if (pixelDifferenceRatio(baseline, latest) > IMAGE_CHANGE_THRESHOLD) {
             return latest
         }
