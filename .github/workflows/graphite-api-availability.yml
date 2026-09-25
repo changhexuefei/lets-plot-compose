@@ -1,0 +1,96 @@
+name: Graphite API Availability Probe
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'graphite-api-probe/**'
+      - '.github/workflows/graphite-api-availability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphite-api-availability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-graphite-api-availability:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      GRAPHITE_SKIKO_VERSION: '0.153.0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Compile Graphite API probe
+        shell: pwsh
+        run: |
+          .\gradlew.bat -p graphite-api-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            clean graphiteApiAvailabilityProbe --stacktrace
+
+      - name: Capture Graphite dependency evidence
+        shell: pwsh
+        run: |
+          $probeDir = "graphite-api-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "graphite-dependencies.txt"
+
+          .\gradlew.bat -p graphite-api-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" dependencyInsight --dependency skiko-graphite --configuration compileClasspath --console=plain |
+            Tee-Object -FilePath $report
+
+          $escapedVersion = [regex]::Escape($env:GRAPHITE_SKIKO_VERSION)
+          $graphitePattern = "org\.jetbrains\.skiko:skiko-graphite-awt:$escapedVersion"
+          if (!(Select-String -Path $report -Pattern $graphitePattern -Quiet)) {
+            throw "Skiko Graphite JVM artifact $env:GRAPHITE_SKIKO_VERSION was not resolved"
+          }
+
+          if (Select-String -Path $report -Pattern "org\.jetbrains\.compose:" -Quiet) {
+            throw "Graphite API probe must remain isolated from Compose runtime dependencies"
+          }
+
+      - name: Verify probe contract
+        shell: pwsh
+        run: |
+          $result = "graphite-api-probe\build\probe\graphite-api-availability.txt"
+          if (!(Test-Path $result)) {
+            throw "Graphite API probe result was not created"
+          }
+          Get-Content $result
+          if (!(Select-String -Path $result -Pattern "^result=API_AVAILABLE$" -Quiet)) {
+            throw "Graphite API availability probe did not pass"
+          }
+          if (!(Select-String -Path $result -Pattern "^runtime.activation=NOT_ATTEMPTED$" -Quiet)) {
+            throw "Probe scope expanded into runtime activation unexpectedly"
+          }
+          if (!(Select-String -Path $result -Pattern "^compose.integration=NOT_ATTEMPTED$" -Quiet)) {
+            throw "Probe scope expanded into Compose integration unexpectedly"
+          }
+
+      - name: Upload Graphite API evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-api-availability-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            graphite-api-probe/build/probe/graphite-api-availability.txt
+            graphite-api-probe/build/probe/graphite-dependencies.txt
+          if-no-files-found: warn
+          retention-days: 90
