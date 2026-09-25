@@ -14,6 +14,9 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     private var lastClickTime: Long = 0
     private var offsetX: Float = 0f
     private var offsetY: Float = 0f
+    private var pointerTraceCount: Int = 0
+    private val pointerTraceEnabled: Boolean =
+        System.getenv("LETS_PLOT_POINTER_TRACE").equals("true", ignoreCase = true)
 
     fun setOffset(offsetX: Float, offsetY: Float) {
         this.offsetX = offsetX
@@ -43,6 +46,15 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                 val adjustedX = ((position.x / density) - offsetX).roundToInt()
                 val adjustedY = ((position.y / density) - offsetY).roundToInt()
                 val vector = Vector(adjustedX, adjustedY)
+
+                if (pointerTraceEnabled && pointerTraceCount < 40) {
+                    println(
+                        "LETS_PLOT_POINTER_TRACE type=${event.type} " +
+                            "position=${position.x},${position.y} density=$density " +
+                            "adjusted=${vector.x},${vector.y} pressed=${change.pressed}"
+                    )
+                    pointerTraceCount++
+                }
 
                 // Extract keyboard modifiers from the pointer event
                 val modifiers = extractModifiers(event)
