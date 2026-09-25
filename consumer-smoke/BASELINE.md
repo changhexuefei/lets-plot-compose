@@ -73,14 +73,17 @@ This contract is deliberately renderer-neutral so it can survive changes in how 
 
 ## Skiko upgrade readiness probe
 
-Before experimenting with a Graphite rendering path, CI keeps the canonical `windows-jdk21-software` control unchanged and runs a second Windows/JDK 21 consumer with an explicit Skiko candidate override.
+Before experimenting with a Graphite rendering path, CI keeps the canonical `windows-jdk21-software` control unchanged and runs a second Windows/JDK 21 compatibility probe.
 
-The initial candidate is Skiko `0.153.0`. The probe:
+Compose Multiplatform `1.12.1` is built against Skiko `0.150.1`. For Skiko `0.153.0`, the probe deliberately verifies the known ABI boundary instead of pretending the candidate is a supported drop-in replacement:
 
-1. keeps `SMOKE_RENDER_API=SOFTWARE` so only the Skiko version changes;
-2. runs the same nine executable consumer checks as the canonical control;
-3. verifies that the Windows x64 Skiko runtime actually resolves to the candidate version;
-4. writes `skiko.override` and the control baseline ID into the candidate manifest;
-5. uploads a separate 90-day artifact using baseline ID `windows-jdk21-software-skiko-0.153.0`.
+1. keeps the canonical control running all nine executable consumer checks;
+2. resolves the candidate Windows x64 runtime and verifies it is actually Skiko `0.153.0`;
+3. launches the candidate only to verify the expected `SkiaLayer.<init>` `NoSuchMethodError`;
+4. fails if the candidate unexpectedly succeeds or fails for a different reason;
+5. writes `compatibility.txt`, the candidate runtime log, renderer dependency report, and an ABI evidence manifest;
+6. uploads the incompatibility evidence for 90 days.
 
-A candidate failure is treated as a Skiko compatibility finding, not as evidence about Graphite. Graphite integration is a later probe only after this software-renderer upgrade probe passes.
+The expected result is `EXPECTED_INCOMPATIBLE`, not a visual baseline. Because runtime linkage fails before PlotPanel can render, candidate screenshots are not meaningful. This guard makes the incompatibility explicit while keeping the canonical visual baseline and its nine checks intact.
+
+The next upgrade stage must test Compose and Skiko as a compatible pair. Graphite integration remains out of scope until such a pair passes the normal runtime smoke.
