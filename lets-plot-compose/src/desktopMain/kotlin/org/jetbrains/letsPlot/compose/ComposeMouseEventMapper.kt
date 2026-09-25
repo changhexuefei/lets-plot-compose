@@ -42,6 +42,38 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     }
 
 
+    internal fun handleDesktopMouseBoundary(
+        localX: Float,
+        localY: Float,
+        density: Float,
+        entered: Boolean
+    ) {
+        val vector = Vector(
+            ((localX / density) - offsetX).roundToInt(),
+            ((localY / density) - offsetY).roundToInt()
+        )
+        val mouseEvent = MouseEvent(
+            vector.x,
+            vector.y,
+            Button.NONE,
+            KeyModifiers.emptyModifiers()
+        )
+
+        if (pointerTraceEnabled && pointerTraceCount < 40) {
+            println(
+                "LETS_PLOT_POINTER_TRACE type=${if (entered) "Enter" else "Exit"} source=awt " +
+                    "position=$localX,$localY density=$density " +
+                    "adjusted=${vector.x},${vector.y} pressed=false"
+            )
+            pointerTraceCount++
+        }
+
+        mouseEventPeer.dispatch(
+            if (entered) MOUSE_ENTERED else MOUSE_LEFT,
+            mouseEvent
+        )
+    }
+
     internal fun handleDesktopMouseMove(
         localX: Float,
         localY: Float,
@@ -72,7 +104,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
             pointerTraceCount++
         }
 
-        dispatchMove(vector, pressed, modifiers, "awt")
+        dispatchMove(vector, pressed, modifiers)
     }
 
     internal fun handlePointerEvent(event: PointerEvent, density: Float) {
@@ -122,7 +154,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                 mouseEventPeer.dispatch(MOUSE_RELEASED, mouseEvent)
             }
 
-            PointerEventType.Move -> dispatchMove(vector, change.pressed, modifiers, "compose")
+            PointerEventType.Move -> dispatchMove(vector, change.pressed, modifiers)
 
             PointerEventType.Enter -> mouseEventPeer.dispatch(MOUSE_ENTERED, mouseEvent)
             PointerEventType.Exit -> mouseEventPeer.dispatch(MOUSE_LEFT, mouseEvent)
@@ -151,8 +183,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     private fun dispatchMove(
         vector: Vector,
         pressed: Boolean,
-        modifiers: KeyModifiers,
-        source: String
+        modifiers: KeyModifiers
     ) {
         val mouseEvent = MouseEvent(
             vector.x,
