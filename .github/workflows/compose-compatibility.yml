@@ -430,18 +430,26 @@ jobs:
           $smokeDir = "consumer-smoke\\build\\smoke"
           New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
           $runtimeLog = Join-Path $smokeDir "candidate-runtime.log"
+          $tempRuntimeLog = Join-Path $env:RUNNER_TEMP "skiko-candidate-runtime.log"
           $compatibility = Join-Path $smokeDir "compatibility.txt"
+
+          Remove-Item -Force -ErrorAction SilentlyContinue $tempRuntimeLog
 
           $previousNativePreference = $PSNativeCommandUseErrorActionPreference
           $PSNativeCommandUseErrorActionPreference = $false
           try {
-            .\\gradlew.bat -p consumer-smoke clean classes run --stacktrace 2>&1 |
-              Tee-Object -FilePath $runtimeLog
+            .\\gradlew.bat -p consumer-smoke classes run --stacktrace 2>&1 |
+              Tee-Object -FilePath $tempRuntimeLog
             $candidateExitCode = $LASTEXITCODE
           }
           finally {
             $PSNativeCommandUseErrorActionPreference = $previousNativePreference
           }
+
+          if (!(Test-Path $tempRuntimeLog)) {
+            throw "Candidate runtime log was not created: $tempRuntimeLog"
+          }
+          Copy-Item -Force $tempRuntimeLog $runtimeLog
 
           if ($candidateExitCode -eq 0) {
             throw "Skiko 0.153.0 unexpectedly ran with Compose 1.12.1. Update this ABI guard to a positive runtime probe."
