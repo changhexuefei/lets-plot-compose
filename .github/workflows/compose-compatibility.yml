@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: changhexuefei/lets-plot
-          ref: master
+          ref: fix/svg-canvas-mapping-lifecycle
           path: core
 
       - name: Checkout lets-plot-kotlin
@@ -142,7 +142,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: changhexuefei/lets-plot
-          ref: master
+          ref: fix/svg-canvas-mapping-lifecycle
           path: core
 
       - name: Set up JDK 17 Core build runtime
