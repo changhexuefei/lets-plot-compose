@@ -533,6 +533,10 @@ jobs:
       SMOKE_RENDER_API: SOFTWARE
       SMOKE_COMPOSE_VERSION: 1.13.0-alpha01
       SMOKE_EXPECTED_SKIKO_VERSION: 0.152.0-alpha02
+      SMOKE_TOOLTIP_STABLE_BASELINE: 'true'
+      SMOKE_TOOLTIP_DWELL_MS: '700'
+      SMOKE_TOOLTIP_X_RADIUS: '160'
+      SMOKE_TOOLTIP_Y_RADIUS: '120'
       SMOKE_BASELINE_ID: windows-jdk21-software-compose-1.13.0-alpha01
     steps:
       - name: Checkout standalone consumer only
