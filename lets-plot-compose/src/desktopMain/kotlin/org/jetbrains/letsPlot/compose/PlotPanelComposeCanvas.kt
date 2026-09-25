@@ -163,7 +163,7 @@ fun PlotPanelComposeCanvas(
         if (!awtPointerBridgeEnabled) {
             onDispose { }
         } else {
-            var pointerInsideCanvas = false
+            var pointerInsideCanvas: Boolean? = null
             val listener = AWTEventListener { event ->
                 val mouseEvent = event as? AwtMouseEvent ?: return@AWTEventListener
                 if (mouseEvent.id != AwtMouseEvent.MOUSE_MOVED &&
@@ -179,7 +179,7 @@ fun PlotPanelComposeCanvas(
                 val localY = screenY - bounds.top
                 val insideCanvas = bounds.contains(Offset(screenX, screenY))
 
-                if (insideCanvas != pointerInsideCanvas) {
+                if (pointerInsideCanvas == null || insideCanvas != pointerInsideCanvas) {
                     composeMouseEventMapper.handleDesktopMouseBoundary(
                         localX = localX,
                         localY = localY,
