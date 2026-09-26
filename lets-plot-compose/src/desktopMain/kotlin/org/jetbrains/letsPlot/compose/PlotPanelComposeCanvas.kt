@@ -26,7 +26,6 @@ import org.jetbrains.letsPlot.commons.geometry.DoubleVector
 import org.jetbrains.letsPlot.commons.logging.PortableLogging
 import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.letsPlot.compose.canvas.SkiaCanvasPeer
-import org.jetbrains.letsPlot.compose.canvas.SkiaContext2d
 import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
 import org.jetbrains.letsPlot.core.interact.event.ToolEventDispatcher
 import org.jetbrains.letsPlot.core.spec.Option.Meta.Kind.GG_TOOLBAR
@@ -232,13 +231,13 @@ fun PlotPanelComposeCanvas(
                     // this Canvas block whenever it changes.
                     redrawTrigger
 
-                    val ctx = SkiaContext2d(drawContext.canvas.nativeCanvas, SkiaFontManager.DEFAULT)
-                    ctx.scale(density.toDouble(), density.toDouble()) // logical → physical pixels
-
-                    ctx.translate(plotPosition.x, plotPosition.y)
-                    plotDrawable.paint(ctx)
-
-                    ctx.dispose()
+                    paintOnSkiaCanvas(
+                        canvas = drawContext.canvas.nativeCanvas,
+                        density = density.toDouble(),
+                        plotPosition = plotPosition
+                    ) { context ->
+                        plotDrawable.paint(context)
+                    }
                 }
             }
         }
