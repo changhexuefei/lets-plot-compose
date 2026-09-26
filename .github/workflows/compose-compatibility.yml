@@ -929,3 +929,197 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+      - name: Upload recompiled Compose Maven repository
+        uses: actions/upload-artifact@v4
+        with:
+          name: lets-plot-compose-recompiled-maven-${{ github.sha }}
+          path: compose/.maven-publish-dev-repo
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-graphite-canvas-rendering-probe:
+    needs:
+      - core-jvm-bundle
+      - windows-compose-1-13-skiko-0-153-recompile-smoke
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      GRAPHITE_SKIKO_VERSION: '0.153.0'
+      GRAPHITE_LWJGL_VERSION: '3.4.3'
+
+    steps:
+      - name: Checkout probe source
+        uses: actions/checkout@v4
+        with:
+          path: compose
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download recompiled Compose Maven repository
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-compose-recompiled-maven-${{ github.sha }}
+          path: compose-recompiled
+
+      - name: Set up JDK 21 Graphite Canvas runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Graphite Canvas Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Capture Windows Vulkan environment
+        shell: pwsh
+        run: |
+          $probeDir = "compose\graphite-canvas-rendering-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          "os=$([System.Environment]::OSVersion.VersionString)" | Set-Content $report
+          "vulkan.loader.exists=$(Test-Path "$env:SystemRoot\System32\vulkan-1.dll")" | Add-Content $report
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, DriverVersion, AdapterRAM |
+            Format-List | Out-String | Add-Content $report
+          Get-Content $report
+
+      - name: Configure browser SwiftShader Vulkan ICD
+        shell: pwsh
+        run: |
+          $probeDir = "compose\graphite-canvas-rendering-probe\build\probe"
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          $roots = @(
+            "$env:ProgramFiles\Google\Chrome\Application",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application",
+            "$env:ProgramFiles\Microsoft\Edge\Application",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          $icd = $roots |
+            ForEach-Object { Get-ChildItem -Path $_ -Filter 'vk_swiftshader_icd.json' -File -Recurse -ErrorAction SilentlyContinue } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if ($null -ne $icd) {
+            $json = Get-Content $icd.FullName -Raw | ConvertFrom-Json
+            $libraryPath = $json.ICD.library_path
+            $resolvedLibrary = Join-Path $icd.Directory.FullName $libraryPath
+            if (!(Test-Path $resolvedLibrary)) {
+              throw "Browser SwiftShader ICD manifest found, but its library is missing: $resolvedLibrary"
+            }
+
+            $directDir = Join-Path $env:RUNNER_TEMP 'letsplot-swiftshader-vulkan-canvas'
+            New-Item -ItemType Directory -Force -Path $directDir | Out-Null
+            $directDll = Join-Path $directDir 'vulkan-1.dll'
+            Copy-Item -Path $resolvedLibrary -Destination $directDll -Force
+
+            "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "VK_ICD_FILENAMES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_PROVIDER=browser-swiftshader-direct" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_DIRECT_DLL=$directDll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+            "vulkan.provider=browser-swiftshader-direct" | Add-Content $report
+            "vulkan.icd=$($icd.FullName)" | Add-Content $report
+            "vulkan.icd.library=$resolvedLibrary" | Add-Content $report
+            "vulkan.direct.dll=$directDll" | Add-Content $report
+          } else {
+            "GRAPHITE_VULKAN_PROVIDER=system" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "vulkan.provider=system" | Add-Content $report
+            "vulkan.icd=not-found" | Add-Content $report
+          }
+
+          Get-Content $report
+
+      - name: Verify Graphite Canvas dependency set
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+        run: |
+          $probeDir = "graphite-canvas-rendering-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "graphite-canvas-dependencies.txt"
+
+          .\gradlew.bat -p graphite-canvas-rendering-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency lets-plot-compose-desktop --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          .\gradlew.bat -p graphite-canvas-rendering-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency skiko-graphite --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+
+          foreach ($pattern in @(
+            "org\.jetbrains\.lets-plot:lets-plot-compose-desktop:3\.2\.3-SNAPSHOT",
+            "org\.jetbrains\.skiko:skiko-graphite-awt:0\.153\.0",
+            "org\.jetbrains\.skiko:skiko-graphite-awt-runtime-windows-x64:0\.153\.0"
+          )) {
+            if (!(Select-String -Path $report -Pattern $pattern -Quiet)) {
+              throw "Graphite Canvas dependency evidence missing: $pattern"
+            }
+          }
+
+      - name: Run Graphite Canvas rendering probe
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          GRAPHITE_PROBE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-canvas-rendering-probe\build\probe
+        run: |
+          .\gradlew.bat -p graphite-canvas-rendering-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
+            clean graphiteCanvasRenderingProbe --stacktrace
+
+      - name: Verify Graphite Canvas contract
+        shell: pwsh
+        run: |
+          $result = "compose\graphite-canvas-rendering-probe\build\probe\graphite-canvas-rendering.txt"
+          $software = "compose\graphite-canvas-rendering-probe\build\probe\software-skia-context2d.png"
+          $graphite = "compose\graphite-canvas-rendering-probe\build\probe\graphite-skia-context2d.png"
+
+          foreach ($file in @($result, $software, $graphite)) {
+            if (!(Test-Path $file)) { throw "Graphite Canvas evidence missing: $file" }
+          }
+
+          Get-Content $result
+          foreach ($pattern in @(
+            '^result=CANVAS_RENDERING_CAPABLE$',
+            '^adapter=SkiaContext2d$',
+            '^software.baseline=PASS$',
+            '^graphite.skiaContext2d=PAINTED$',
+            '^graphite.submit=PASS$',
+            '^graphite.readback=PASS$',
+            '^scene.axes=PASS$',
+            '^scene.path=PASS$',
+            '^scene.points=PASS$',
+            '^scene.text=PASS$',
+            '^comparison=PASS$',
+            '^plotpanel.integration=NOT_ATTEMPTED$',
+            '^renderer.adoption=NOT_STARTED$'
+          )) {
+            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
+              throw "Graphite Canvas contract missing: $pattern"
+            }
+          }
+
+      - name: Upload Graphite Canvas evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-canvas-rendering-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            compose/graphite-canvas-rendering-probe/build/probe/graphite-canvas-rendering.txt
+            compose/graphite-canvas-rendering-probe/build/probe/software-skia-context2d.png
+            compose/graphite-canvas-rendering-probe/build/probe/graphite-skia-context2d.png
+            compose/graphite-canvas-rendering-probe/build/probe/graphite-canvas-dependencies.txt
+            compose/graphite-canvas-rendering-probe/build/probe/windows-vulkan-environment.txt
+          if-no-files-found: warn
+          retention-days: 90
+
