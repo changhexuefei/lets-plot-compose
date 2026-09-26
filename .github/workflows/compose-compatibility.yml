@@ -2274,7 +2274,7 @@ jobs:
             "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
             clean run --stacktrace
 
-      - name: Verify PlotPanel Graphite interaction regression contract
+      - name: Verify PlotPanel Graphite interaction stress contract
         shell: pwsh
         run: |
           $result = "compose\graphite-plotpanel-shadow-probe\build\probe\graphite-plotpanel-shadow.txt"
@@ -2289,7 +2289,7 @@ jobs:
 
           Get-Content $result
           foreach ($pattern in @(
-            '^result=COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_CAPABLE$',
+            '^result=COMPOSE_PLOTPANEL_INTERACTION_STRESS_REGRESSION_CAPABLE$',
             '^compose\.plotpanel\.production_artifact=PASS$',
             '^production\.renderer\.default=NATIVE_CANVAS$',
             '^feature_flag\.value=graphite-offscreen$',
@@ -2313,6 +2313,17 @@ jobs:
             '^interaction\.drag_pan\.capture=PASS$',
             '^interaction\.drag_pan\.override_count=[1-9][0-9]*$',
             '^interaction\.state\.after_resize=PRESERVED$',
+            '^stress\.pre_resize\.rounds=4$',
+            '^stress\.pre_resize=PASS$',
+            '^stress\.post_resize\.rounds=4$',
+            '^stress\.post_resize=PASS$',
+            '^stress\.total\.rounds=8$',
+            '^stress\.total\.interactions=16$',
+            '^stress\.state_changes=16$',
+            '^stress\.repaints=16$',
+            '^stress\.context_reuse=PASS$',
+            '^stress\.render_target\.reuse=PASS$',
+            '^stress\.render_target\.resize_boundary=PASS$',
             '^compose\.plotpanel\.resize=PASS$',
             '^compose\.plotpanel\.resized_capture=PASS$',
             '^compose\.recomposition\.after_resize=PASS$',
@@ -2327,6 +2338,7 @@ jobs:
             '^persistent\.render_target\.lifecycle=PASS$',
             '^compose\.plotpanel\.dispose=PASS$',
             '^interaction\.regression=PASS$',
+            '^interaction\.stress=PASS$',
             '^provider\.packaging=PROBE_ONLY$',
             '^renderer\.adoption=SHADOW_OPT_IN_ONLY$',
             '^public\.api\.change=NONE$'
@@ -2336,7 +2348,7 @@ jobs:
             }
           }
 
-      - name: Upload PlotPanel Graphite interaction regression evidence
+      - name: Upload PlotPanel Graphite interaction stress evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -2580,7 +2592,7 @@ jobs:
           require_line "$graphite_provider" "provider.packaging=PROBE_ONLY"
           require_line "$graphite_provider" "renderer.adoption=OPT_IN_ONLY"
 
-          require_line "$plotpanel_shadow" "result=COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_CAPABLE"
+          require_line "$plotpanel_shadow" "result=COMPOSE_PLOTPANEL_INTERACTION_STRESS_REGRESSION_CAPABLE"
           require_line "$plotpanel_shadow" "compose.plotpanel.production_artifact=PASS"
           require_line "$plotpanel_shadow" "production.renderer.default=NATIVE_CANVAS"
           require_line "$plotpanel_shadow" "feature_flag.value=graphite-offscreen"
@@ -2602,6 +2614,17 @@ jobs:
           require_line "$plotpanel_shadow" "interaction.drag_pan.repaint=PASS"
           require_line "$plotpanel_shadow" "interaction.drag_pan.capture=PASS"
           require_line "$plotpanel_shadow" "interaction.state.after_resize=PRESERVED"
+          require_line "$plotpanel_shadow" "stress.pre_resize.rounds=4"
+          require_line "$plotpanel_shadow" "stress.pre_resize=PASS"
+          require_line "$plotpanel_shadow" "stress.post_resize.rounds=4"
+          require_line "$plotpanel_shadow" "stress.post_resize=PASS"
+          require_line "$plotpanel_shadow" "stress.total.rounds=8"
+          require_line "$plotpanel_shadow" "stress.total.interactions=16"
+          require_line "$plotpanel_shadow" "stress.state_changes=16"
+          require_line "$plotpanel_shadow" "stress.repaints=16"
+          require_line "$plotpanel_shadow" "stress.context_reuse=PASS"
+          require_line "$plotpanel_shadow" "stress.render_target.reuse=PASS"
+          require_line "$plotpanel_shadow" "stress.render_target.resize_boundary=PASS"
           require_line "$plotpanel_shadow" "compose.plotpanel.resize=PASS"
           require_line "$plotpanel_shadow" "compose.plotpanel.resized_capture=PASS"
           require_line "$plotpanel_shadow" "compose.recomposition.after_resize=PASS"
@@ -2616,6 +2639,7 @@ jobs:
           require_line "$plotpanel_shadow" "persistent.render_target.lifecycle=PASS"
           require_line "$plotpanel_shadow" "compose.plotpanel.dispose=PASS"
           require_line "$plotpanel_shadow" "interaction.regression=PASS"
+          require_line "$plotpanel_shadow" "interaction.stress=PASS"
           require_line "$plotpanel_shadow" "provider.packaging=PROBE_ONLY"
           require_line "$plotpanel_shadow" "renderer.adoption=SHADOW_OPT_IN_ONLY"
           require_line "$plotpanel_shadow" "public.api.change=NONE"
@@ -2626,7 +2650,7 @@ jobs:
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_CAPABLE
+          result=COMPOSE_PLOTPANEL_INTERACTION_STRESS_REGRESSION_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2643,6 +2667,16 @@ jobs:
           plotpanel.interaction_state_change=PASS
           plotpanel.interaction_repaint=PASS
           plotpanel.interaction_state_after_resize=PRESERVED
+          plotpanel.interaction_stress=PASS
+          plotpanel.stress_rounds_pre_resize=4
+          plotpanel.stress_rounds_post_resize=4
+          plotpanel.stress_total_rounds=8
+          plotpanel.stress_total_interactions=16
+          plotpanel.stress_state_changes=16
+          plotpanel.stress_repaints=16
+          plotpanel.stress_context_reuse=PASS
+          plotpanel.stress_render_target_reuse=PASS
+          plotpanel.stress_resize_boundary=PASS
           plotpanel.resize=PASS
           plotpanel.recomposition=PASS
           plotpanel.figure_model_dispose=PASS
@@ -2677,7 +2711,7 @@ jobs:
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=SHADOW_OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_INTERACTION_STRESS_REGRESSION
+          next.required=COMPOSE_PLOTPANEL_NATIVE_GRAPHITE_PERFORMANCE_EVIDENCE
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
