@@ -793,7 +793,9 @@ jobs:
         working-directory: compose
         shell: pwsh
         run: |
-          $report = "build\skiko-0.153-frontend-dependencies.txt"
+          $reportDir = "build"
+          New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
+          $report = Join-Path $reportDir "skiko-0.153-frontend-dependencies.txt"
           .\gradlew.bat -I skiko-0.153-override.init.gradle :lets-plot-compose:dependencyInsight --dependency skiko --configuration desktopCompileClasspath --console=plain |
             Tee-Object -FilePath $report
 
