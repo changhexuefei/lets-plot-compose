@@ -63,6 +63,10 @@ import kotlin.math.abs
 
 private const val WIDTH = 800
 private const val HEIGHT = 550
+private const val RESIZED_WIDTH = 960
+private const val RESIZED_HEIGHT = 640
+private const val SAME_SIZE_FRAME_COUNT = 10
+private const val RESIZED_FRAME_COUNT = 10
 private const val LOGICAL_PLOT_WIDTH = 560
 private const val LOGICAL_PLOT_HEIGHT = 380
 private const val BRIDGE_DENSITY = 1.25
@@ -81,9 +85,12 @@ private data class VulkanObjects(
     val deviceName: String
 )
 
-private data class VulkanImage(
+private data class PersistentRenderTarget(
     val image: Long,
-    val memory: Long
+    val memory: Long,
+    val width: Int,
+    val height: Int,
+    var layout: Int = VK_IMAGE_LAYOUT_UNDEFINED
 )
 
 private data class PreparedPlot(
@@ -102,6 +109,11 @@ private class GraphiteBackendProvider(
     private var contextCreateCount = 0
     private var contextReuseCount = 0
     private var disposeCount = 0
+    private var renderTarget: PersistentRenderTarget? = null
+    private var renderTargetCreateCount = 0
+    private var renderTargetReuseCount = 0
+    private var renderTargetResizeCount = 0
+    private var renderTargetDisposeCount = 0
 
     @OptIn(ExperimentalSkikoApi::class)
     override fun paint(
@@ -113,9 +125,7 @@ private class GraphiteBackendProvider(
         paint: (SkiaContext2d) -> Unit
     ) {
         check(!disposed) { "Graphite provider is already disposed" }
-        check(width == WIDTH && height == HEIGHT) {
-            "Unexpected provider target size: ${width}x${height}"
-        }
+        check(width > 0 && height > 0) { "Invalid provider target size: ${width}x${height}" }
 
         paintCount++
         evidence["provider.invoked"] = "PASS"
@@ -132,11 +142,12 @@ private class GraphiteBackendProvider(
             evidence["graphite.context.reuse_count"] = contextReuseCount.toString()
         }
 
-        val target = createRenderImage(vk).also {
-            evidence["vulkan.image"] = "CREATED"
-            evidence["vulkan.image.memory"] = "BOUND"
-            evidence["render_target.lifecycle"] = "PER_PAINT"
-        }
+        val target = ensureRenderTarget(vk, width, height)
+        evidence["vulkan.image"] = "CREATED"
+        evidence["vulkan.image.memory"] = "BOUND"
+        evidence["render_target.lifecycle"] = "PERSISTENT_BY_SIZE"
+        evidence["render_target.current_size"] = "${target.width}x${target.height}"
+        evidence["image.layout.before_wrap"] = layoutName(target.layout)
 
         val graphitePixels: IntArray
         try {
@@ -152,7 +163,7 @@ private class GraphiteBackendProvider(
                                 VulkanImageUsageFlags.TRANSFER_SRC or
                                 VulkanImageUsageFlags.TRANSFER_DST
                     ),
-                    imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    imageLayout = target.layout,
                     queueFamilyIndex = vk.queueFamilyIndex,
                     imagePtr = target.image
                 ).use { backendTexture ->
@@ -178,6 +189,8 @@ private class GraphiteBackendProvider(
                             context.insertRecording(recording)
                             context.submit(syncCpu = true)
                         }
+                        target.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                        evidence["image.layout.after_submit"] = layoutName(target.layout)
                         evidence["graphite.submit"] = "PASS"
 
                         surface.makeImageSnapshot().use { snapshot ->
@@ -185,18 +198,17 @@ private class GraphiteBackendProvider(
                             evidence["graphite.snapshot"] = "PASS"
                         }
 
-                        graphitePixels = readBackGraphiteImage(vk, target.image)
+                        graphitePixels = readBackGraphiteImage(vk, target)
                         if (paintCount == 1) {
-                            savePixels(graphitePixels, graphitePng)
+                            savePixels(graphitePixels, graphitePng, width, height)
                         }
+                        evidence["image.layout.after_readback"] = layoutName(target.layout)
                         evidence["graphite.readback"] = "PASS"
                     }
                 }
             }
         } finally {
             vkDeviceWaitIdle(vk.device)
-            vkDestroyImage(vk.device, target.image, null)
-            vkFreeMemory(vk.device, target.memory, null)
         }
 
         val buffered = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
@@ -206,8 +218,46 @@ private class GraphiteBackendProvider(
         }
 
         evidence["provider.composite_to_target"] = "PASS"
-        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT"
+        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT_AND_RENDER_TARGET"
         evidence["graphite.context.create_count"] = contextCreateCount.toString()
+        evidence["render_target.create_count"] = renderTargetCreateCount.toString()
+        evidence["render_target.reuse_count"] = renderTargetReuseCount.toString()
+        evidence["render_target.resize_count"] = renderTargetResizeCount.toString()
+        evidence["render_target.dispose_count"] = renderTargetDisposeCount.toString()
+    }
+
+    private fun ensureRenderTarget(vk: VulkanObjects, width: Int, height: Int): PersistentRenderTarget {
+        val existing = renderTarget
+        if (existing != null && existing.width == width && existing.height == height) {
+            renderTargetReuseCount++
+            evidence["render_target.reuse"] = "PASS"
+            evidence["render_target.reuse_count"] = renderTargetReuseCount.toString()
+            return existing
+        }
+
+        if (existing != null) {
+            vkDeviceWaitIdle(vk.device)
+            disposeRenderTarget(vk, existing)
+            renderTargetResizeCount++
+            evidence["render_target.resize"] = "PASS"
+            evidence["render_target.resize_count"] = renderTargetResizeCount.toString()
+        }
+
+        return createRenderImage(vk, width, height).also { created ->
+            renderTarget = created
+            renderTargetCreateCount++
+            evidence["render_target.create_count"] = renderTargetCreateCount.toString()
+        }
+    }
+
+    private fun disposeRenderTarget(vk: VulkanObjects, target: PersistentRenderTarget) {
+        vkDestroyImage(vk.device, target.image, null)
+        vkFreeMemory(vk.device, target.memory, null)
+        renderTargetDisposeCount++
+        evidence["render_target.dispose_count"] = renderTargetDisposeCount.toString()
+        if (renderTarget === target) {
+            renderTarget = null
+        }
     }
 
     @OptIn(ExperimentalSkikoApi::class)
@@ -257,12 +307,18 @@ private class GraphiteBackendProvider(
             graphiteContext?.close()
             graphiteContext = null
             evidence["graphite.context.dispose"] = "PASS"
+
+            if (vk != null) {
+                renderTarget?.let { disposeRenderTarget(vk, it) }
+                evidence["render_target.final_dispose"] = "PASS"
+            }
         } finally {
             if (vk != null) {
                 vkDestroyDevice(vk.device, null)
                 vkDestroyInstance(vk.instance, null)
                 evidence["vulkan.device.dispose"] = "PASS"
             }
+            renderTarget = null
             vulkan = null
         }
     }
