@@ -279,53 +279,53 @@ private fun paintSceneThroughFrontendBridge(surface: Surface) {
 }
 
 private fun drawScene(ctx: SkiaContext2d) {
-        ctx.setFillStyle(LpColor.WHITE)
-        ctx.fillRect(0.0, 0.0, WIDTH.toDouble(), HEIGHT.toDouble())
+    ctx.setFillStyle(LpColor.WHITE)
+    ctx.fillRect(0.0, 0.0, WIDTH.toDouble(), HEIGHT.toDouble())
 
-        ctx.setStrokeStyle(LpColor.DARK_GRAY)
-        ctx.setLineWidth(2.0)
-        ctx.beginPath()
-        ctx.moveTo(74.0, 342.0)
-        ctx.lineTo(586.0, 342.0)
-        ctx.moveTo(74.0, 342.0)
-        ctx.lineTo(74.0, 60.0)
-        for (x in listOf(154.0, 234.0, 314.0, 394.0, 474.0, 554.0)) {
-            ctx.moveTo(x, 337.0)
-            ctx.lineTo(x, 347.0)
-        }
-        for (y in listOf(86.0, 142.0, 198.0, 254.0, 310.0)) {
-            ctx.moveTo(69.0, y)
-            ctx.lineTo(79.0, y)
-        }
-        ctx.stroke()
+    ctx.setStrokeStyle(LpColor.DARK_GRAY)
+    ctx.setLineWidth(2.0)
+    ctx.beginPath()
+    ctx.moveTo(74.0, 342.0)
+    ctx.lineTo(586.0, 342.0)
+    ctx.moveTo(74.0, 342.0)
+    ctx.lineTo(74.0, 60.0)
+    for (x in listOf(154.0, 234.0, 314.0, 394.0, 474.0, 554.0)) {
+        ctx.moveTo(x, 337.0)
+        ctx.lineTo(x, 347.0)
+    }
+    for (y in listOf(86.0, 142.0, 198.0, 254.0, 310.0)) {
+        ctx.moveTo(69.0, y)
+        ctx.lineTo(79.0, y)
+    }
+    ctx.stroke()
 
-        ctx.setStrokeStyle(LpColor.PACIFIC_BLUE)
-        ctx.setLineWidth(4.0)
-        ctx.beginPath()
-        ctx.moveTo(94.0, 292.0)
-        ctx.bezierCurveTo(170.0, 262.0, 196.0, 150.0, 260.0, 190.0)
-        ctx.bezierCurveTo(322.0, 230.0, 358.0, 94.0, 424.0, 126.0)
-        ctx.bezierCurveTo(472.0, 150.0, 522.0, 112.0, 566.0, 82.0)
-        ctx.stroke()
+    ctx.setStrokeStyle(LpColor.PACIFIC_BLUE)
+    ctx.setLineWidth(4.0)
+    ctx.beginPath()
+    ctx.moveTo(94.0, 292.0)
+    ctx.bezierCurveTo(170.0, 262.0, 196.0, 150.0, 260.0, 190.0)
+    ctx.bezierCurveTo(322.0, 230.0, 358.0, 94.0, 424.0, 126.0)
+    ctx.bezierCurveTo(472.0, 150.0, 522.0, 112.0, 566.0, 82.0)
+    ctx.stroke()
 
-        ctx.setStrokeStyle(LpColor.WHITE)
-        ctx.setFillStyle(LpColor.RED)
-        ctx.setLineWidth(2.0)
-        listOf(
-            112.0 to 282.0,
-            224.0 to 182.0,
-            326.0 to 214.0,
-            438.0 to 120.0,
-            548.0 to 94.0
-        ).forEach { (x, y) -> ctx.drawCircle(x, y, 8.0) }
+    ctx.setStrokeStyle(LpColor.WHITE)
+    ctx.setFillStyle(LpColor.RED)
+    ctx.setLineWidth(2.0)
+    listOf(
+        112.0 to 282.0,
+        224.0 to 182.0,
+        326.0 to 214.0,
+        438.0 to 120.0,
+        548.0 to 94.0
+    ).forEach { (x, y) -> ctx.drawCircle(x, y, 8.0) }
 
-        ctx.setFillStyle(LpColor.BLACK)
-        ctx.setFont(Font(fontWeight = FontWeight.BOLD, fontSize = 20.0, fontFamily = "Arial"))
-        ctx.fillText("Lets-Plot SkiaContext2d", 78.0, 34.0)
-        ctx.setFont(Font(fontSize = 13.0, fontFamily = "Arial"))
-        ctx.fillText("SOFTWARE vs Graphite", 78.0, 52.0)
-        ctx.fillText("X axis", 300.0, 382.0)
-        ctx.fillText("Y", 44.0, 194.0)
+    ctx.setFillStyle(LpColor.BLACK)
+    ctx.setFont(Font(fontWeight = FontWeight.BOLD, fontSize = 20.0, fontFamily = "Arial"))
+    ctx.fillText("Lets-Plot SkiaContext2d", 78.0, 34.0)
+    ctx.setFont(Font(fontSize = 13.0, fontFamily = "Arial"))
+    ctx.fillText("SOFTWARE vs Graphite", 78.0, 52.0)
+    ctx.fillText("X axis", 300.0, 382.0)
+    ctx.fillText("Y", 44.0, 194.0)
     ctx.fillText("0", 62.0, 360.0)
     ctx.fillText("5", 550.0, 360.0)
 }
