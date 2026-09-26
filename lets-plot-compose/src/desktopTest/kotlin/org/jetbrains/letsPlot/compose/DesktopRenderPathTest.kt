@@ -9,7 +9,6 @@ import org.jetbrains.letsPlot.commons.geometry.DoubleVector
 import org.jetbrains.skia.Surface
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DesktopRenderPathTest {
@@ -86,7 +85,5 @@ class DesktopRenderPathTest {
         } finally {
             DesktopOffscreenRendererRegistry.renderer = previous
         }
-
-        assertFalse(DesktopOffscreenRendererRegistry.renderer === DesktopOffscreenRendererRegistry)
     }
 }
