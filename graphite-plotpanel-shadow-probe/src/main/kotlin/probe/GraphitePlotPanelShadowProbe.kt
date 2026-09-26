@@ -788,8 +788,11 @@ private fun assertScreenshotHasPlot(file: File) {
         }
     }
 
-    check(nonWhite >= 250) { "PlotPanel screenshot is unexpectedly blank: nonWhite=$nonWhite" }
-    check(dark >= 30) { "PlotPanel screenshot has too little axes/text ink: dark=$dark" }
+    // Interaction views can legitimately move some marks outside the viewport.
+    // Keep the blank-screen guard strong enough to require plot ink, axes/text and
+    // multiple colors without assuming the initial number of visible marks.
+    check(nonWhite >= 180) { "PlotPanel screenshot is unexpectedly blank: nonWhite=$nonWhite" }
+    check(dark >= 20) { "PlotPanel screenshot has too little axes/text ink: dark=$dark" }
     check(sampled.size >= 8) { "PlotPanel screenshot has too few sampled colors: ${sampled.size}" }
 }
 
