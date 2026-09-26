@@ -19,7 +19,7 @@ import org.jetbrains.skia.Canvas
  *
  * The current production path still passes Compose's native Skia canvas.
  */
-internal inline fun paintOnSkiaCanvas(
+internal fun paintOnSkiaCanvas(
     canvas: Canvas,
     density: Double,
     plotPosition: DoubleVector,

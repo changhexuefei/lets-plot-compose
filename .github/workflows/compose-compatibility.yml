@@ -1093,6 +1093,9 @@ jobs:
           foreach ($pattern in @(
             '^result=CANVAS_RENDERING_CAPABLE$',
             '^adapter=SkiaContext2d$',
+            '^bridge.entry=DesktopSkiaPaintBridgeKt.paintOnSkiaCanvas$',
+            '^bridge.software=PASS$',
+            '^bridge.graphite=PASS$',
             '^software.baseline=PASS$',
             '^graphite.skiaContext2d=PAINTED$',
             '^graphite.submit=PASS$',

@@ -1,8 +1,8 @@
 package probe
 
+import org.jetbrains.letsPlot.commons.geometry.DoubleVector
 import org.jetbrains.letsPlot.commons.values.Color as LpColor
 import org.jetbrains.letsPlot.compose.canvas.SkiaContext2d
-import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
 import org.jetbrains.letsPlot.core.canvas.Font
 import org.jetbrains.letsPlot.core.canvas.FontWeight
 import org.jetbrains.skia.Bitmap
@@ -43,6 +43,7 @@ import org.lwjgl.vulkan.VkSubmitInfo
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
+import java.lang.reflect.InvocationTargetException
 import kotlin.math.abs
 
 private const val WIDTH = 640
@@ -79,6 +80,9 @@ fun main() {
         "schema" to "1",
         "probe.type" to "graphite-canvas-rendering",
         "adapter" to "SkiaContext2d",
+        "bridge.entry" to "DesktopSkiaPaintBridgeKt.paintOnSkiaCanvas",
+        "bridge.software" to "REQUESTED",
+        "bridge.graphite" to "REQUESTED",
         "platform" to System.getProperty("os.name"),
         "java.version" to System.getProperty("java.version"),
         "skiko.version" to (System.getenv("GRAPHITE_SKIKO_VERSION") ?: "unknown"),
@@ -102,6 +106,7 @@ fun main() {
 
         stage = "software-render"
         val softwarePixels = renderSoftware(softwarePng)
+        evidence["bridge.software"] = "PASS"
         val softwareMetrics = assertSceneStructure("software", softwarePixels)
         evidence.putAll(softwareMetrics)
         evidence["software.baseline"] = "PASS"
@@ -169,8 +174,9 @@ fun main() {
 
                         surface.use {
                             evidence["graphite.surface"] = "CREATED"
-                            stage = "graphite-skia-context2d"
-                            drawSceneWithLetsPlotAdapter(surface)
+                            stage = "graphite-frontend-paint-bridge"
+                            paintSceneThroughFrontendBridge(surface)
+                            evidence["bridge.graphite"] = "PASS"
                             evidence["graphite.skiaContext2d"] = "PAINTED"
 
                             stage = "graphite-submit"
@@ -232,7 +238,7 @@ fun main() {
 
 private fun renderSoftware(png: File): IntArray {
     Surface.makeRasterN32Premul(WIDTH, HEIGHT).use { surface ->
-        drawSceneWithLetsPlotAdapter(surface)
+        paintSceneThroughFrontendBridge(surface)
         surface.makeImageSnapshot().use { image ->
             Bitmap.makeFromImage(image).use { bitmap ->
                 val pixels = IntArray(WIDTH * HEIGHT)
@@ -248,61 +254,80 @@ private fun renderSoftware(png: File): IntArray {
     }
 }
 
-private fun drawSceneWithLetsPlotAdapter(surface: Surface) {
-    val ctx = SkiaContext2d(surface.canvas, SkiaFontManager.DEFAULT)
+private fun paintSceneThroughFrontendBridge(surface: Surface) {
+    val bridgeClass = Class.forName("org.jetbrains.letsPlot.compose.DesktopSkiaPaintBridgeKt")
+    val bridgeMethod = bridgeClass.declaredMethods.singleOrNull { method ->
+        method.name == "paintOnSkiaCanvas" && method.parameterCount == 4
+    } ?: error(
+        "Desktop Skia paint bridge JVM entry was not found. Available methods: " +
+            bridgeClass.declaredMethods.joinToString { it.name + "/" + it.parameterCount }
+    )
+    bridgeMethod.isAccessible = true
+
+    val painter: (SkiaContext2d) -> Unit = { context -> drawScene(context) }
     try {
-        ctx.setFillStyle(LpColor.WHITE)
-        ctx.fillRect(0.0, 0.0, WIDTH.toDouble(), HEIGHT.toDouble())
-
-        ctx.setStrokeStyle(LpColor.DARK_GRAY)
-        ctx.setLineWidth(2.0)
-        ctx.beginPath()
-        ctx.moveTo(74.0, 342.0)
-        ctx.lineTo(586.0, 342.0)
-        ctx.moveTo(74.0, 342.0)
-        ctx.lineTo(74.0, 60.0)
-        for (x in listOf(154.0, 234.0, 314.0, 394.0, 474.0, 554.0)) {
-            ctx.moveTo(x, 337.0)
-            ctx.lineTo(x, 347.0)
-        }
-        for (y in listOf(86.0, 142.0, 198.0, 254.0, 310.0)) {
-            ctx.moveTo(69.0, y)
-            ctx.lineTo(79.0, y)
-        }
-        ctx.stroke()
-
-        ctx.setStrokeStyle(LpColor.PACIFIC_BLUE)
-        ctx.setLineWidth(4.0)
-        ctx.beginPath()
-        ctx.moveTo(94.0, 292.0)
-        ctx.bezierCurveTo(170.0, 262.0, 196.0, 150.0, 260.0, 190.0)
-        ctx.bezierCurveTo(322.0, 230.0, 358.0, 94.0, 424.0, 126.0)
-        ctx.bezierCurveTo(472.0, 150.0, 522.0, 112.0, 566.0, 82.0)
-        ctx.stroke()
-
-        ctx.setStrokeStyle(LpColor.WHITE)
-        ctx.setFillStyle(LpColor.RED)
-        ctx.setLineWidth(2.0)
-        listOf(
-            112.0 to 282.0,
-            224.0 to 182.0,
-            326.0 to 214.0,
-            438.0 to 120.0,
-            548.0 to 94.0
-        ).forEach { (x, y) -> ctx.drawCircle(x, y, 8.0) }
-
-        ctx.setFillStyle(LpColor.BLACK)
-        ctx.setFont(Font(fontWeight = FontWeight.BOLD, fontSize = 20.0, fontFamily = "Arial"))
-        ctx.fillText("Lets-Plot SkiaContext2d", 78.0, 34.0)
-        ctx.setFont(Font(fontSize = 13.0, fontFamily = "Arial"))
-        ctx.fillText("SOFTWARE vs Graphite", 78.0, 52.0)
-        ctx.fillText("X axis", 300.0, 382.0)
-        ctx.fillText("Y", 44.0, 194.0)
-        ctx.fillText("0", 62.0, 360.0)
-        ctx.fillText("5", 550.0, 360.0)
-    } finally {
-        ctx.dispose()
+        bridgeMethod.invoke(
+            null,
+            surface.canvas,
+            1.0,
+            DoubleVector(0.0, 0.0),
+            painter
+        )
+    } catch (t: InvocationTargetException) {
+        throw (t.targetException ?: t)
     }
+}
+
+private fun drawScene(ctx: SkiaContext2d) {
+    ctx.setFillStyle(LpColor.WHITE)
+    ctx.fillRect(0.0, 0.0, WIDTH.toDouble(), HEIGHT.toDouble())
+
+    ctx.setStrokeStyle(LpColor.DARK_GRAY)
+    ctx.setLineWidth(2.0)
+    ctx.beginPath()
+    ctx.moveTo(74.0, 342.0)
+    ctx.lineTo(586.0, 342.0)
+    ctx.moveTo(74.0, 342.0)
+    ctx.lineTo(74.0, 60.0)
+    for (x in listOf(154.0, 234.0, 314.0, 394.0, 474.0, 554.0)) {
+        ctx.moveTo(x, 337.0)
+        ctx.lineTo(x, 347.0)
+    }
+    for (y in listOf(86.0, 142.0, 198.0, 254.0, 310.0)) {
+        ctx.moveTo(69.0, y)
+        ctx.lineTo(79.0, y)
+    }
+    ctx.stroke()
+
+    ctx.setStrokeStyle(LpColor.PACIFIC_BLUE)
+    ctx.setLineWidth(4.0)
+    ctx.beginPath()
+    ctx.moveTo(94.0, 292.0)
+    ctx.bezierCurveTo(170.0, 262.0, 196.0, 150.0, 260.0, 190.0)
+    ctx.bezierCurveTo(322.0, 230.0, 358.0, 94.0, 424.0, 126.0)
+    ctx.bezierCurveTo(472.0, 150.0, 522.0, 112.0, 566.0, 82.0)
+    ctx.stroke()
+
+    ctx.setStrokeStyle(LpColor.WHITE)
+    ctx.setFillStyle(LpColor.RED)
+    ctx.setLineWidth(2.0)
+    listOf(
+        112.0 to 282.0,
+        224.0 to 182.0,
+        326.0 to 214.0,
+        438.0 to 120.0,
+        548.0 to 94.0
+    ).forEach { (x, y) -> ctx.drawCircle(x, y, 8.0) }
+
+    ctx.setFillStyle(LpColor.BLACK)
+    ctx.setFont(Font(fontWeight = FontWeight.BOLD, fontSize = 20.0, fontFamily = "Arial"))
+    ctx.fillText("Lets-Plot SkiaContext2d", 78.0, 34.0)
+    ctx.setFont(Font(fontSize = 13.0, fontFamily = "Arial"))
+    ctx.fillText("SOFTWARE vs Graphite", 78.0, 52.0)
+    ctx.fillText("X axis", 300.0, 382.0)
+    ctx.fillText("Y", 44.0, 194.0)
+    ctx.fillText("0", 62.0, 360.0)
+    ctx.fillText("5", 550.0, 360.0)
 }
 
 private fun assertSceneStructure(prefix: String, pixels: IntArray): Map<String, String> {
