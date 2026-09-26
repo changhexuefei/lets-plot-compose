@@ -1,0 +1,141 @@
+name: Graphite Compose Integration Readiness Probe
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'graphite-compose-integration-probe/**'
+      - '.github/workflows/graphite-compose-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphite-compose-integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-graphite-compose-integration:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      PROBE_COMPOSE_VERSION: '1.13.0-alpha01'
+      PROBE_GRAPHITE_SKIKO_VERSION: '0.153.0'
+      PROBE_EXPECTATION: 'READY_CANDIDATE'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Capture integration dependency evidence
+        shell: pwsh
+        run: |
+          $probeDir = "graphite-compose-integration-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "integration-dependencies.txt"
+
+          .\gradlew.bat -p graphite-compose-integration-probe "-PgraphiteSkikoVersion=$env:PROBE_GRAPHITE_SKIKO_VERSION" dependencyInsight --dependency desktop-jvm-windows-x64 --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          .\gradlew.bat -p graphite-compose-integration-probe "-PgraphiteSkikoVersion=$env:PROBE_GRAPHITE_SKIKO_VERSION" dependencyInsight --dependency skiko --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+          .\gradlew.bat -p graphite-compose-integration-probe "-PgraphiteSkikoVersion=$env:PROBE_GRAPHITE_SKIKO_VERSION" dependencyInsight --dependency skiko-graphite --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+
+          $composePattern = "org\.jetbrains\.compose\.desktop:desktop-jvm-windows-x64:$([regex]::Escape($env:PROBE_COMPOSE_VERSION))"
+          if (!(Select-String -Path $report -Pattern $composePattern -Quiet)) {
+            throw "Compose Desktop $env:PROBE_COMPOSE_VERSION was not resolved"
+          }
+          $graphitePattern = "org\.jetbrains\.skiko:skiko-graphite-awt:$([regex]::Escape($env:PROBE_GRAPHITE_SKIKO_VERSION))"
+          if (!(Select-String -Path $report -Pattern $graphitePattern -Quiet)) {
+            throw "Graphite AWT $env:PROBE_GRAPHITE_SKIKO_VERSION was not resolved"
+          }
+
+          $skikoCorePattern = "org\.jetbrains\.skiko:skiko:$([regex]::Escape($env:PROBE_GRAPHITE_SKIKO_VERSION))"
+          if (!(Select-String -Path $report -Pattern $skikoCorePattern -Quiet)) {
+            throw "Skiko core $env:PROBE_GRAPHITE_SKIKO_VERSION was not resolved on the shared Compose/Graphite classpath"
+          }
+          $skikoAwtPattern = "org\.jetbrains\.skiko:skiko-awt:$([regex]::Escape($env:PROBE_GRAPHITE_SKIKO_VERSION))"
+          if (!(Select-String -Path $report -Pattern $skikoAwtPattern -Quiet)) {
+            throw "Skiko AWT $env:PROBE_GRAPHITE_SKIKO_VERSION was not resolved on the shared Compose/Graphite classpath"
+          }
+
+      - name: Run isolated Compose + Graphite probe
+        shell: pwsh
+        run: |
+          $log = "graphite-compose-integration-probe\build\probe\integration-run.log"
+          New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
+
+          $global:LASTEXITCODE = 0
+          .\gradlew.bat -p graphite-compose-integration-probe "-PgraphiteSkikoVersion=$env:PROBE_GRAPHITE_SKIKO_VERSION" run --stacktrace 2>&1 |
+            Tee-Object -FilePath $log
+          $gradleExit = $LASTEXITCODE
+          "gradle.exit.code=$gradleExit" | Add-Content $log
+
+          # The probe classifies known ABI incompatibility itself. A non-zero process is allowed
+          # only when the evidence file records the expected incompatibility.
+          exit 0
+
+      - name: Verify current integration expectation
+        shell: pwsh
+        run: |
+          $resultFile = "graphite-compose-integration-probe\build\probe\graphite-compose-integration.txt"
+          if (!(Test-Path $resultFile)) {
+            throw "Compose + Graphite probe did not produce a result file"
+          }
+          Get-Content $resultFile
+
+          $actual = (Select-String -Path $resultFile -Pattern '^result=(.+)$').Matches.Groups[1].Value
+          if ($actual -ne $env:PROBE_EXPECTATION) {
+            throw "Graphite/Compose readiness changed: expected $env:PROBE_EXPECTATION but observed $actual. Review dependency alignment before changing this gate."
+          }
+
+          if ($actual -eq 'EXPECTED_INCOMPATIBLE') {
+            if (!(Select-String -Path $resultFile -Pattern '^known\.abi\.mismatch=true$' -Quiet)) {
+              throw "Expected incompatibility was not the known Skiko ABI mismatch"
+            }
+          }
+
+      - name: Build readiness manifest
+        shell: pwsh
+        run: |
+          $probeDir = "graphite-compose-integration-probe\build\probe"
+          $manifest = Join-Path $probeDir "readiness-manifest.txt"
+          @(
+            'schema=1',
+            'probe.type=graphite-compose-integration-readiness',
+            "compose.version=$env:PROBE_COMPOSE_VERSION",
+            "graphite.skiko.version=$env:PROBE_GRAPHITE_SKIKO_VERSION",
+            "expected.result=$env:PROBE_EXPECTATION",
+            'plotpanel.integration=NOT_ATTEMPTED',
+            'renderer.adoption=NOT_STARTED',
+            "workflow.sha=${{ github.sha }}",
+            "workflow.run_id=${{ github.run_id }}"
+          ) | Set-Content $manifest -Encoding UTF8
+          Get-Content $manifest
+
+      - name: Upload Graphite Compose readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-compose-readiness-${{ env.PROBE_COMPOSE_VERSION }}-skiko-${{ env.PROBE_GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            graphite-compose-integration-probe/build/probe/graphite-compose-integration.txt
+            graphite-compose-integration-probe/build/probe/integration-dependencies.txt
+            graphite-compose-integration-probe/build/probe/integration-run.log
+            graphite-compose-integration-probe/build/probe/readiness-manifest.txt
+          if-no-files-found: warn
+          retention-days: 90
