@@ -70,6 +70,8 @@ private const val WINDOW_WIDTH = 800
 private const val WINDOW_HEIGHT = 550
 private const val RESIZED_WINDOW_WIDTH = 960
 private const val RESIZED_WINDOW_HEIGHT = 640
+private const val STRESS_ROUNDS_BEFORE_RESIZE = 4
+private const val STRESS_ROUNDS_AFTER_RESIZE = 4
 private const val WHITE = -1
 
 private data class VulkanObjects(
@@ -328,7 +330,7 @@ fun main() {
 
     val evidence = linkedMapOf(
         "schema" to "1",
-        "probe.type" to "compose-plotpanel-interaction-regression",
+        "probe.type" to "compose-plotpanel-interaction-stress-regression",
         "compose.version" to "1.13.0-alpha01",
         "skiko.version" to (System.getenv("GRAPHITE_SKIKO_VERSION") ?: "unknown"),
         "lwjgl.version" to (System.getenv("GRAPHITE_LWJGL_VERSION") ?: "unknown"),
@@ -358,12 +360,12 @@ fun main() {
     }
 
     Thread({
-        Thread.sleep(60_000)
+        Thread.sleep(90_000)
         if (completed.compareAndSet(false, true)) {
             evidence["result"] = "FAIL"
             evidence["failure.stage"] = "watchdog"
             evidence["failure.type"] = "TIMEOUT"
-            evidence["failure.message"] = "PlotPanel interaction regression probe did not complete within 60 seconds"
+            evidence["failure.message"] = "PlotPanel interaction stress regression probe did not complete within 90 seconds"
             writeEvidence(resultFile, evidence)
             exitProcess(43)
         }
@@ -493,9 +495,31 @@ fun main() {
                     assertScreenshotHasPlot(dragPanScreenshot)
                     evidence["interaction.drag_pan.capture"] = "PASS"
 
+                    val preResizeStress = runInteractionStress(
+                        window = composeWindow,
+                        backend = backend,
+                        figureModel = figureModel,
+                        rounds = STRESS_ROUNDS_BEFORE_RESIZE - 1,
+                        phase = "pre-resize"
+                    )
+                    check(preResizeStress.contextCreateCount == 1) {
+                        "Graphite context was recreated during pre-resize interaction stress"
+                    }
+                    check(preResizeStress.targetCreateCount == panSnapshot.targetCreateCount) {
+                        "Persistent render target was recreated without resize during pre-resize stress"
+                    }
+                    check(preResizeStress.targetResizeCount == panSnapshot.targetResizeCount) {
+                        "Unexpected render-target resize was observed during pre-resize stress"
+                    }
+                    check(preResizeStress.targetReuseCount > panSnapshot.targetReuseCount) {
+                        "Persistent render target was not reused during pre-resize stress"
+                    }
+                    evidence["stress.pre_resize.rounds"] = STRESS_ROUNDS_BEFORE_RESIZE.toString()
+                    evidence["stress.pre_resize"] = "PASS"
+
                     composeWindow.setSize(RESIZED_WINDOW_WIDTH, RESIZED_WINDOW_HEIGHT)
 
-                    val resized = waitForResizeFrames(backend, stable)
+                    val resized = waitForResizeFrames(backend, preResizeStress)
                     resizedObserved = true
                     evidence["compose.plotpanel.resize"] = "PASS"
                     evidence["compose.plotpanel.resized_size"] = "${resized.width}x${resized.height}"
@@ -508,10 +532,10 @@ fun main() {
                     check(resized.contextCreateCount == 1) {
                         "Graphite context was recreated across PlotPanel resize: ${resized.contextCreateCount}"
                     }
-                    check(resized.targetCreateCount > stable.targetCreateCount) {
+                    check(resized.targetCreateCount > preResizeStress.targetCreateCount) {
                         "Resize did not recreate the persistent render target"
                     }
-                    check(resized.targetResizeCount > stable.targetResizeCount) {
+                    check(resized.targetResizeCount > preResizeStress.targetResizeCount) {
                         "Resize lifecycle was not observed"
                     }
                     check(resized.layoutReuseObserved) {
@@ -527,6 +551,42 @@ fun main() {
                     }
                     evidence["interaction.state.after_resize"] = "PRESERVED"
                     evidence["compose.recomposition.after_resize"] = "PASS"
+
+                    val postResizeStress = runInteractionStress(
+                        window = composeWindow,
+                        backend = backend,
+                        figureModel = figureModel,
+                        rounds = STRESS_ROUNDS_AFTER_RESIZE,
+                        phase = "post-resize"
+                    )
+                    check(postResizeStress.contextCreateCount == 1) {
+                        "Graphite context was recreated during post-resize interaction stress"
+                    }
+                    check(postResizeStress.targetCreateCount == resized.targetCreateCount) {
+                        "Persistent render target was recreated without resize during post-resize stress"
+                    }
+                    check(postResizeStress.targetResizeCount == resized.targetResizeCount) {
+                        "Unexpected render-target resize was observed during post-resize stress"
+                    }
+                    check(postResizeStress.targetReuseCount > resized.targetReuseCount) {
+                        "Persistent render target was not reused during post-resize stress"
+                    }
+                    check(figureModel.specOverrideState.value.specOverrides.isNotEmpty()) {
+                        "Plot interaction overrides were lost during post-resize stress"
+                    }
+
+                    val expectedStressInteractions =
+                        (STRESS_ROUNDS_BEFORE_RESIZE + STRESS_ROUNDS_AFTER_RESIZE) * 2
+                    evidence["stress.post_resize.rounds"] = STRESS_ROUNDS_AFTER_RESIZE.toString()
+                    evidence["stress.post_resize"] = "PASS"
+                    evidence["stress.total.rounds"] =
+                        (STRESS_ROUNDS_BEFORE_RESIZE + STRESS_ROUNDS_AFTER_RESIZE).toString()
+                    evidence["stress.total.interactions"] = expectedStressInteractions.toString()
+                    evidence["stress.state_changes"] = expectedStressInteractions.toString()
+                    evidence["stress.repaints"] = expectedStressInteractions.toString()
+                    evidence["stress.context_reuse"] = "PASS"
+                    evidence["stress.render_target.reuse"] = "PASS"
+                    evidence["stress.render_target.resize_boundary"] = "PASS"
 
                     exitApplication()
                 }
@@ -566,12 +626,13 @@ fun main() {
         evidence["persistent.render_target.lifecycle"] = "PASS"
         evidence["compose.plotpanel.dispose"] = "PASS"
         evidence["interaction.regression"] = "PASS"
-        evidence["result"] = "COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_CAPABLE"
+        evidence["interaction.stress"] = "PASS"
+        evidence["result"] = "COMPOSE_PLOTPANEL_INTERACTION_STRESS_REGRESSION_CAPABLE"
         evidence["failure.stage"] = "none"
         writeEvidence(resultFile, evidence)
 
         completed.set(true)
-        println("COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_RESULT PASS")
+        println("COMPOSE_PLOTPANEL_INTERACTION_STRESS_REGRESSION_RESULT PASS")
         evidence.forEach { (key, value) -> println("$key=$value") }
     } catch (t: Throwable) {
         evidence["result"] = "FAIL"
@@ -616,7 +677,11 @@ private suspend fun waitForInteractionStateChange(
     error("PlotPanel $interactionName did not mutate spec override state and repaint")
 }
 
-private suspend fun performWheelZoom(window: java.awt.Window) {
+private suspend fun performWheelZoom(
+    window: java.awt.Window,
+    rotation: Int = -1,
+    notches: Int = 3
+) {
     val robot = Robot(window.graphicsConfiguration.device).apply { autoDelay = 60 }
     window.toFront()
     delay(200)
@@ -627,13 +692,17 @@ private suspend fun performWheelZoom(window: java.awt.Window) {
     val y = location.y + size.height / 2
 
     robot.mouseMove(x, y)
-    repeat(3) {
-        robot.mouseWheel(-1)
+    repeat(notches) {
+        robot.mouseWheel(rotation)
         delay(100)
     }
 }
 
-private suspend fun performDragPan(window: java.awt.Window) {
+private suspend fun performDragPan(
+    window: java.awt.Window,
+    deltaX: Int = 120,
+    deltaY: Int = 70
+) {
     val robot = Robot(window.graphicsConfiguration.device).apply { autoDelay = 40 }
     window.toFront()
     delay(150)
@@ -642,8 +711,10 @@ private suspend fun performDragPan(window: java.awt.Window) {
     val size = window.size
     val startX = location.x + size.width / 2
     val startY = location.y + size.height / 2
-    val endX = startX + minOf(120, size.width / 5)
-    val endY = startY + minOf(70, size.height / 7)
+    val maxDeltaX = maxOf(1, size.width / 5)
+    val maxDeltaY = maxOf(1, size.height / 7)
+    val endX = startX + deltaX.coerceIn(-maxDeltaX, maxDeltaX)
+    val endY = startY + deltaY.coerceIn(-maxDeltaY, maxDeltaY)
 
     robot.mouseMove(startX, startY)
     robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
@@ -659,6 +730,52 @@ private suspend fun performDragPan(window: java.awt.Window) {
         robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
     }
     delay(150)
+}
+
+private suspend fun runInteractionStress(
+    window: java.awt.Window,
+    backend: PersistentGraphiteShadowBackend,
+    figureModel: PlotFigureModel,
+    rounds: Int,
+    phase: String
+): BackendSnapshot {
+    var latest = backend.snapshot()
+
+    repeat(rounds) { index ->
+        val wheelSignature = specOverrideSignature(figureModel)
+        val wheelBaseline = latest
+        val wheelRotation = if (index % 2 == 0) 1 else -1
+        performWheelZoom(
+            window = window,
+            rotation = wheelRotation,
+            notches = 2
+        )
+        latest = waitForInteractionStateChange(
+            backend = backend,
+            figureModel = figureModel,
+            previousSignature = wheelSignature,
+            baselineFrames = wheelBaseline.successfulFrames,
+            interactionName = "$phase wheel zoom #${index + 1}"
+        )
+
+        val panSignature = specOverrideSignature(figureModel)
+        val panBaseline = latest
+        val direction = if (index % 2 == 0) -1 else 1
+        performDragPan(
+            window = window,
+            deltaX = 70 * direction,
+            deltaY = 40 * direction
+        )
+        latest = waitForInteractionStateChange(
+            backend = backend,
+            figureModel = figureModel,
+            previousSignature = panSignature,
+            baselineFrames = panBaseline.successfulFrames,
+            interactionName = "$phase drag pan #${index + 1}"
+        )
+    }
+
+    return latest
 }
 
 private suspend fun waitForStableFrames(backend: PersistentGraphiteShadowBackend): BackendSnapshot {
