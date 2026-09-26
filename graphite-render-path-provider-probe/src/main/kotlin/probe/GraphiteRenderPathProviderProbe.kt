@@ -148,6 +148,12 @@ private class GraphiteBackendProvider(
         evidence["render_target.lifecycle"] = "PERSISTENT_BY_SIZE"
         evidence["render_target.current_size"] = "${target.width}x${target.height}"
         evidence["image.layout.before_wrap"] = layoutName(target.layout)
+        if (paintCount == 2) {
+            evidence["image.second_frame.layout_before_wrap"] = layoutName(target.layout)
+        }
+        if (paintCount == SAME_SIZE_FRAME_COUNT + 1) {
+            evidence["image.resize_first_frame.layout_before_wrap"] = layoutName(target.layout)
+        }
 
         val graphitePixels: IntArray
         try {
@@ -676,7 +682,12 @@ private fun paintPlotDrawable(drawable: PlotCanvasDrawable, surface: Surface) {
     }
 }
 
-private fun assertPlotStructure(prefix: String, pixels: IntArray): Map<String, String> {
+private fun assertPlotStructure(
+    prefix: String,
+    pixels: IntArray,
+    width: Int = WIDTH,
+    height: Int = HEIGHT
+): Map<String, String> {
     val white = pixels.count { color ->
         channel(color, 16) >= 235 && channel(color, 8) >= 235 && channel(color, 0) >= 235
     }
@@ -689,11 +700,11 @@ private fun assertPlotStructure(prefix: String, pixels: IntArray): Map<String, S
     val dark = pixels.count { color ->
         channel(color, 16) <= 130 && channel(color, 8) <= 130 && channel(color, 0) <= 130
     }
-    val plotInk = countInkInRect(pixels, 24, 24, WIDTH - 24, HEIGHT - 24)
+    val plotInk = countInkInRect(pixels, width, 24, 24, width - 24, height - 24)
     val sampledColors = linkedSetOf<Int>()
-    for (y in 0 until HEIGHT step 8) {
-        for (x in 0 until WIDTH step 8) {
-            sampledColors += pixels[y * WIDTH + x] and 0x00FFFFFF
+    for (y in 0 until height step 8) {
+        for (x in 0 until width step 8) {
+            sampledColors += pixels[y * width + x] and 0x00FFFFFF
         }
     }
 
@@ -715,11 +726,18 @@ private fun assertPlotStructure(prefix: String, pixels: IntArray): Map<String, S
     )
 }
 
-private fun countInkInRect(pixels: IntArray, left: Int, top: Int, right: Int, bottom: Int): Int {
+private fun countInkInRect(
+    pixels: IntArray,
+    width: Int,
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int
+): Int {
     var count = 0
     for (y in top until bottom) {
         for (x in left until right) {
-            val color = pixels[y * WIDTH + x]
+            val color = pixels[y * width + x]
             val r = channel(color, 16)
             val g = channel(color, 8)
             val b = channel(color, 0)
@@ -746,9 +764,17 @@ private fun pixelDifferenceRatio(left: IntArray, right: IntArray): Double {
 
 private fun channel(color: Int, shift: Int): Int = (color ushr shift) and 0xFF
 
-private fun savePixels(pixels: IntArray, file: File) {
-    val image = BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_ARGB)
-    image.setRGB(0, 0, WIDTH, HEIGHT, pixels, 0, WIDTH)
+private fun savePixels(
+    pixels: IntArray,
+    file: File,
+    width: Int = WIDTH,
+    height: Int = HEIGHT
+) {
+    check(pixels.size == width * height) {
+        "Pixel buffer size ${pixels.size} does not match ${width}x${height}"
+    }
+    val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+    image.setRGB(0, 0, width, height, pixels, 0, width)
     check(ImageIO.write(image, "png", file)) { "Failed to write PNG: ${file.absolutePath}" }
 }
 
@@ -817,7 +843,11 @@ private fun createVulkanObjects(): VulkanObjects {
     }
 }
 
-private fun createRenderImage(vk: VulkanObjects): VulkanImage {
+private fun createRenderImage(
+    vk: VulkanObjects,
+    width: Int,
+    height: Int
+): PersistentRenderTarget {
     MemoryStack.stackPush().use { stack ->
         val imageCreateInfo = VkImageCreateInfo.calloc(stack)
             .sType(VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO)
@@ -835,7 +865,7 @@ private fun createRenderImage(vk: VulkanObjects): VulkanImage {
             )
             .sharingMode(VK_SHARING_MODE_EXCLUSIVE)
             .initialLayout(VK_IMAGE_LAYOUT_UNDEFINED)
-        imageCreateInfo.extent().width(WIDTH).height(HEIGHT).depth(1)
+        imageCreateInfo.extent().width(width).height(height).depth(1)
 
         val imagePtr = stack.mallocLong(1)
         checkVk(vkCreateImage(vk.device, imageCreateInfo, null, imagePtr), "vkCreateImage")
@@ -845,7 +875,11 @@ private fun createRenderImage(vk: VulkanObjects): VulkanImage {
             vkGetImageMemoryRequirements(vk.device, image, requirements)
             val memoryProperties = VkPhysicalDeviceMemoryProperties.calloc(stack)
             vkGetPhysicalDeviceMemoryProperties(vk.physicalDevice, memoryProperties)
-            val memoryTypeIndex = findMemoryType(requirements.memoryTypeBits(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryProperties)
+            val memoryTypeIndex = findMemoryType(
+                requirements.memoryTypeBits(),
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                memoryProperties
+            )
             val allocationInfo = VkMemoryAllocateInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO)
                 .allocationSize(requirements.size())
@@ -855,7 +889,12 @@ private fun createRenderImage(vk: VulkanObjects): VulkanImage {
             val memory = memoryPtr[0]
             try {
                 checkVk(vkBindImageMemory(vk.device, image, memory, 0), "vkBindImageMemory")
-                return VulkanImage(image, memory)
+                return PersistentRenderTarget(
+                    image = image,
+                    memory = memory,
+                    width = width,
+                    height = height
+                )
             } catch (t: Throwable) {
                 vkFreeMemory(vk.device, memory, null)
                 throw t
@@ -867,8 +906,14 @@ private fun createRenderImage(vk: VulkanObjects): VulkanImage {
     }
 }
 
-private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
-    val byteSize = (WIDTH * HEIGHT * 4).toLong()
+private fun readBackGraphiteImage(
+    vk: VulkanObjects,
+    target: PersistentRenderTarget
+): IntArray {
+    val width = target.width
+    val height = target.height
+    val byteSize = (width * height * 4).toLong()
+
     MemoryStack.stackPush().use { stack ->
         val bufferInfo = VkBufferCreateInfo.calloc(stack)
             .sType(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO)
@@ -906,6 +951,7 @@ private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
             val poolPtr = stack.mallocLong(1)
             checkVk(vkCreateCommandPool(vk.device, poolInfo, null, poolPtr), "vkCreateCommandPool")
             commandPool = poolPtr[0]
+
             val allocInfo = VkCommandBufferAllocateInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO)
                 .commandPool(commandPool)
@@ -924,22 +970,26 @@ private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
                 .sType(VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER)
                 .srcAccessMask(VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)
                 .dstAccessMask(VK_ACCESS_TRANSFER_READ_BIT)
-                .oldLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+                .oldLayout(target.layout)
                 .newLayout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
                 .srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                 .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .image(image)
+                .image(target.image)
             barrier[0].subresourceRange()
                 .aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
                 .baseMipLevel(0)
                 .levelCount(1)
                 .baseArrayLayer(0)
                 .layerCount(1)
+
             vkCmdPipelineBarrier(
                 commandBuffer,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
-                0, null, null, barrier
+                0,
+                null,
+                null,
+                barrier
             )
 
             val copy = VkBufferImageCopy.calloc(1, stack)
@@ -950,20 +1000,27 @@ private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
                 .baseArrayLayer(0)
                 .layerCount(1)
             copy[0].imageOffset().set(0, 0, 0)
-            copy[0].imageExtent().set(WIDTH, HEIGHT, 1)
-            vkCmdCopyImageToBuffer(commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, copy)
+            copy[0].imageExtent().set(width, height, 1)
+            vkCmdCopyImageToBuffer(
+                commandBuffer,
+                target.image,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                stagingBuffer,
+                copy
+            )
             checkVk(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer")
             val submitInfo = VkSubmitInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_SUBMIT_INFO)
                 .pCommandBuffers(stack.pointers(commandBuffer.address()))
             checkVk(vkQueueSubmit(vk.queue, submitInfo, VK_NULL_HANDLE), "vkQueueSubmit(readback)")
             checkVk(vkQueueWaitIdle(vk.queue), "vkQueueWaitIdle(readback)")
+            target.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
 
             val mappedPtr = stack.mallocPointer(1)
             checkVk(vkMapMemory(vk.device, stagingMemory, 0, byteSize, 0, mappedPtr), "vkMapMemory")
             try {
                 val bytes = MemoryUtil.memByteBuffer(mappedPtr[0], byteSize.toInt())
-                val pixels = IntArray(WIDTH * HEIGHT)
+                val pixels = IntArray(width * height)
                 for (i in pixels.indices) {
                     val offset = i * 4
                     val b = bytes.get(offset).toInt() and 0xFF
@@ -981,6 +1038,15 @@ private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
             if (stagingMemory != 0L) vkFreeMemory(vk.device, stagingMemory, null)
             vkDestroyBuffer(vk.device, stagingBuffer, null)
         }
+    }
+}
+
+private fun layoutName(layout: Int): String {
+    return when (layout) {
+        VK_IMAGE_LAYOUT_UNDEFINED -> "UNDEFINED"
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL -> "COLOR_ATTACHMENT_OPTIMAL"
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL -> "TRANSFER_SRC_OPTIMAL"
+        else -> "0x" + layout.toString(16)
     }
 }
 
