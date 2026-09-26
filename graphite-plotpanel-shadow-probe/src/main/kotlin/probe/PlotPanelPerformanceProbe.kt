@@ -19,7 +19,6 @@ import java.awt.image.BufferedImage
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.imageio.ImageIO
 import kotlin.math.ceil
 import kotlin.system.exitProcess
 
@@ -29,6 +28,8 @@ private const val PERFORMANCE_WINDOW_HEIGHT = 550
 private const val PERFORMANCE_WARMUP_ROUNDS = 2
 private const val PERFORMANCE_MEASURED_ROUNDS = 4
 private const val PERFORMANCE_INTERACTION_TIMEOUT_MS = 5_000L
+private const val PERFORMANCE_READY_NON_WHITE = 80
+private const val PERFORMANCE_VISIBLE_CHANGE_NON_WHITE = 35
 
 private enum class PerformancePath(
     val envValue: String,
@@ -290,7 +291,7 @@ private suspend fun waitForVisiblePlot(window: java.awt.Window) {
     repeat(150) {
         delay(20)
         val sample = fingerprintWindow(window, robot)
-        if (sample.nonWhite >= 180) {
+        if (sample.nonWhite >= PERFORMANCE_READY_NON_WHITE) {
             return
         }
     }
@@ -367,7 +368,10 @@ private suspend fun waitForVisibleInteractionChange(
         val stateChanged = specOverrideSignature(figureModel) != previousSignature
         if (stateChanged) {
             val fingerprint = fingerprintWindow(window, robot)
-            if (fingerprint.hash != previousFingerprint && fingerprint.nonWhite >= 120) {
+            if (
+                fingerprint.hash != previousFingerprint &&
+                fingerprint.nonWhite >= PERFORMANCE_VISIBLE_CHANGE_NON_WHITE
+            ) {
                 return elapsedMs(started)
             }
         }
