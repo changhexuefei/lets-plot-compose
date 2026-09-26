@@ -94,6 +94,35 @@ jobs:
         working-directory: compose
         run: ./gradlew :lets-plot-compose:desktopTest --stacktrace
 
+      - name: Build desktop render path contract evidence
+        shell: bash
+        run: |
+          mkdir -p compose/lets-plot-compose/build/render-path-contract
+          cat > compose/lets-plot-compose/build/render-path-contract/desktop-render-path.txt <<EOF
+          schema=1
+          result=FEATURE_FLAGGED_RENDER_PATH_CAPABLE
+          feature_flag.property=letsplot.compose.desktop.renderPath
+          default.path=NATIVE_CANVAS
+          offscreen.requested=SUPPORTED
+          offscreen.missing_provider=FALLBACK_NATIVE
+          offscreen.provider.binding=INTERNAL_REGISTRY
+          public.api.change=NONE
+          production.graphite_dependency=ABSENT
+          renderer.adoption=NOT_STARTED
+          tests=PASS
+          workflow.sha=${GITHUB_SHA}
+          workflow.run_id=${GITHUB_RUN_ID}
+          EOF
+          cat compose/lets-plot-compose/build/render-path-contract/desktop-render-path.txt
+
+      - name: Upload desktop render path contract evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-render-path-contract-${{ github.sha }}
+          path: compose/lets-plot-compose/build/render-path-contract/desktop-render-path.txt
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Publish Compose Desktop consumer artifacts
         working-directory: compose
         run: >
@@ -1904,6 +1933,12 @@ jobs:
           name: graphite-compose-offscreen-integration-skiko-0.153.0-${{ github.sha }}
           path: evidence/compose-offscreen
 
+      - name: Download desktop render path contract evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-render-path-contract-${{ github.sha }}
+          path: evidence/render-path
+
       - name: Verify Graphite frontend readiness chain
         shell: bash
         run: |
@@ -1929,10 +1964,11 @@ jobs:
           bridge="$(find_one evidence/paint-bridge graphite-paint-bridge.txt)"
           offscreen="$(find_one evidence/offscreen-composite graphite-offscreen-composite.txt)"
           compose_offscreen="$(find_one evidence/compose-offscreen graphite-compose-offscreen-integration.txt)"
+          render_path="$(find_one evidence/render-path desktop-render-path.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path"
 
           require_line() {
             local file="$1"
@@ -1989,13 +2025,24 @@ jobs:
           require_line "$compose_offscreen" "production.renderer.switch=NOT_IMPLEMENTED"
           require_line "$compose_offscreen" "renderer.adoption=NOT_STARTED"
 
+          require_line "$render_path" "result=FEATURE_FLAGGED_RENDER_PATH_CAPABLE"
+          require_line "$render_path" "feature_flag.property=letsplot.compose.desktop.renderPath"
+          require_line "$render_path" "default.path=NATIVE_CANVAS"
+          require_line "$render_path" "offscreen.requested=SUPPORTED"
+          require_line "$render_path" "offscreen.missing_provider=FALLBACK_NATIVE"
+          require_line "$render_path" "offscreen.provider.binding=INTERNAL_REGISTRY"
+          require_line "$render_path" "public.api.change=NONE"
+          require_line "$render_path" "production.graphite_dependency=ABSENT"
+          require_line "$render_path" "renderer.adoption=NOT_STARTED"
+          require_line "$render_path" "tests=PASS"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=GRAPHITE_COMPOSE_OFFSCREEN_INTEGRATION_CAPABLE
+          result=FEATURE_FLAGGED_RENDER_PATH_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2008,9 +2055,12 @@ jobs:
           offscreen.composite=PASS
           offscreen.transfer=CPU_READBACK
           compose.native_canvas.integration=PASS
+          feature_flag.path=PASS
+          feature_flag.default=NATIVE_CANVAS
+          offscreen.provider.binding=INTERNAL_REGISTRY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=NOT_STARTED
-          next.required=FEATURE_FLAGGED_RENDERER_INTEGRATION
+          next.required=OFFSCREEN_PROVIDER_BINDING
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
