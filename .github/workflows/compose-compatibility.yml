@@ -2137,6 +2137,202 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+  windows-plotpanel-persistent-graphite-shadow:
+    needs:
+      - windows-graphite-render-path-provider-probe
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      GRAPHITE_SKIKO_VERSION: '0.153.0'
+      GRAPHITE_LWJGL_VERSION: '3.4.3'
+
+    steps:
+      - name: Checkout PlotPanel Graphite shadow probe source
+        uses: actions/checkout@v4
+        with:
+          path: compose
+
+      - name: Download frontend Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download recompiled Compose Maven repository
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-compose-recompiled-maven-${{ github.sha }}
+          path: compose-recompiled
+
+      - name: Set up JDK 21 PlotPanel Graphite shadow runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up PlotPanel Graphite shadow Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Configure browser SwiftShader Vulkan ICD
+        shell: pwsh
+        run: |
+          $probeDir = "compose\graphite-plotpanel-shadow-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          "os=$([System.Environment]::OSVersion.VersionString)" | Set-Content $report
+          "vulkan.loader.exists=$(Test-Path "$env:SystemRoot\System32\vulkan-1.dll")" | Add-Content $report
+
+          $roots = @(
+            "$env:ProgramFiles\Google\Chrome\Application",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application",
+            "$env:ProgramFiles\Microsoft\Edge\Application",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          $icd = $roots |
+            ForEach-Object { Get-ChildItem -Path $_ -Filter 'vk_swiftshader_icd.json' -File -Recurse -ErrorAction SilentlyContinue } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if ($null -ne $icd) {
+            $json = Get-Content $icd.FullName -Raw | ConvertFrom-Json
+            $resolvedLibrary = Join-Path $icd.Directory.FullName $json.ICD.library_path
+            if (!(Test-Path $resolvedLibrary)) {
+              throw "Browser SwiftShader ICD manifest found, but its library is missing: $resolvedLibrary"
+            }
+
+            $directDir = Join-Path $env:RUNNER_TEMP 'letsplot-swiftshader-vulkan-plotpanel-shadow'
+            New-Item -ItemType Directory -Force -Path $directDir | Out-Null
+            $directDll = Join-Path $directDir 'vulkan-1.dll'
+            Copy-Item -Path $resolvedLibrary -Destination $directDll -Force
+
+            "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "VK_ICD_FILENAMES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_PROVIDER=browser-swiftshader-direct" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_DIRECT_DLL=$directDll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+            "vulkan.provider=browser-swiftshader-direct" | Add-Content $report
+            "vulkan.icd=$($icd.FullName)" | Add-Content $report
+            "vulkan.icd.library=$resolvedLibrary" | Add-Content $report
+            "vulkan.direct.dll=$directDll" | Add-Content $report
+          } else {
+            "GRAPHITE_VULKAN_PROVIDER=system" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "vulkan.provider=system" | Add-Content $report
+            "vulkan.icd=not-found" | Add-Content $report
+          }
+
+          Get-Content $report
+
+      - name: Verify PlotPanel Graphite shadow dependency set
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+        run: |
+          $probeDir = "graphite-plotpanel-shadow-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "graphite-plotpanel-shadow-dependencies.txt"
+
+          .\gradlew.bat -p graphite-plotpanel-shadow-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency lets-plot-compose-desktop --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          .\gradlew.bat -p graphite-plotpanel-shadow-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency skiko-graphite-awt --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+
+          foreach ($pattern in @(
+            "org\.jetbrains\.lets-plot:lets-plot-compose-desktop:3\.2\.3-SNAPSHOT",
+            "org\.jetbrains\.skiko:skiko-graphite-awt:0\.153\.0",
+            "org\.jetbrains\.skiko:skiko-graphite-awt-runtime-windows-x64:0\.153\.0"
+          )) {
+            if (!(Select-String -Path $report -Pattern $pattern -Quiet)) {
+              throw "PlotPanel Graphite shadow dependency evidence missing: $pattern"
+            }
+          }
+
+      - name: Run real PlotPanel persistent Graphite shadow probe
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          GRAPHITE_SHADOW_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-plotpanel-shadow-probe\build\probe
+        run: |
+          .\gradlew.bat -p graphite-plotpanel-shadow-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
+            clean run --stacktrace
+
+      - name: Verify PlotPanel persistent Graphite shadow contract
+        shell: pwsh
+        run: |
+          $result = "compose\graphite-plotpanel-shadow-probe\build\probe\graphite-plotpanel-shadow.txt"
+          $initial = "compose\graphite-plotpanel-shadow-probe\build\probe\plotpanel-graphite-initial.png"
+          $resized = "compose\graphite-plotpanel-shadow-probe\build\probe\plotpanel-graphite-resized.png"
+
+          foreach ($file in @($result, $initial, $resized)) {
+            if (!(Test-Path $file)) { throw "PlotPanel Graphite shadow evidence missing: $file" }
+          }
+
+          Get-Content $result
+          foreach ($pattern in @(
+            '^result=COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW_CAPABLE$',
+            '^compose\.plotpanel\.production_artifact=PASS$',
+            '^production\.renderer\.default=NATIVE_CANVAS$',
+            '^feature_flag\.value=graphite-offscreen$',
+            '^provider\.binding=INTERNAL_REGISTRY_REFLECTION$',
+            '^provider\.install=PASS$',
+            '^compose\.window=STARTED$',
+            '^compose\.plotpanel=PASS$',
+            '^compose\.plotpanel\.render_path=OFFSCREEN_COMPOSITE$',
+            '^compose\.plotpanel\.initial_capture=PASS$',
+            '^compose\.plotpanel\.resize=PASS$',
+            '^compose\.plotpanel\.resized_capture=PASS$',
+            '^compose\.recomposition\.after_resize=PASS$',
+            '^graphite\.context\.create_count=1$',
+            '^render_target\.reuse=PASS$',
+            '^render_target\.resize=PASS$',
+            '^image\.layout\.reuse_transition=PASS$',
+            '^provider\.registration\.dispose=PASS$',
+            '^provider\.dispose_count=1$',
+            '^persistent\.context\.lifecycle=PASS$',
+            '^persistent\.render_target\.lifecycle=PASS$',
+            '^compose\.plotpanel\.dispose=PASS$',
+            '^provider\.packaging=PROBE_ONLY$',
+            '^renderer\.adoption=SHADOW_OPT_IN_ONLY$',
+            '^public\.api\.change=NONE$'
+          )) {
+            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
+              throw "PlotPanel Graphite shadow contract missing: $pattern"
+            }
+          }
+
+      - name: Upload PlotPanel persistent Graphite shadow evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-plotpanel-shadow-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            compose/graphite-plotpanel-shadow-probe/build/probe/graphite-plotpanel-shadow.txt
+            compose/graphite-plotpanel-shadow-probe/build/probe/plotpanel-graphite-initial.png
+            compose/graphite-plotpanel-shadow-probe/build/probe/plotpanel-graphite-resized.png
+            compose/graphite-plotpanel-shadow-probe/build/probe/graphite-plotpanel-shadow-dependencies.txt
+            compose/graphite-plotpanel-shadow-probe/build/probe/windows-vulkan-environment.txt
+          if-no-files-found: warn
+          retention-days: 90
+
+
   graphite-renderer-readiness-gate:
     needs:
       - windows-compose-1-13-skiko-0-153-recompile-smoke
@@ -2146,6 +2342,7 @@ jobs:
       - windows-graphite-offscreen-composite-probe
       - windows-compose-offscreen-integration-probe
       - windows-graphite-render-path-provider-probe
+      - windows-plotpanel-persistent-graphite-shadow
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -2198,6 +2395,12 @@ jobs:
           name: graphite-render-path-provider-skiko-0.153.0-${{ github.sha }}
           path: evidence/graphite-provider
 
+      - name: Download PlotPanel persistent Graphite shadow evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-plotpanel-shadow-skiko-0.153.0-${{ github.sha }}
+          path: evidence/plotpanel-shadow
+
       - name: Verify Graphite frontend readiness chain
         shell: bash
         run: |
@@ -2225,10 +2428,11 @@ jobs:
           compose_offscreen="$(find_one evidence/compose-offscreen graphite-compose-offscreen-integration.txt)"
           render_path="$(find_one evidence/render-path desktop-render-path.txt)"
           graphite_provider="$(find_one evidence/graphite-provider graphite-render-path-provider.txt)"
+          plotpanel_shadow="$(find_one evidence/plotpanel-shadow graphite-plotpanel-shadow.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow"
 
           require_line() {
             local file="$1"
@@ -2356,13 +2560,39 @@ jobs:
           require_line "$graphite_provider" "provider.packaging=PROBE_ONLY"
           require_line "$graphite_provider" "renderer.adoption=OPT_IN_ONLY"
 
+          require_line "$plotpanel_shadow" "result=COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW_CAPABLE"
+          require_line "$plotpanel_shadow" "compose.plotpanel.production_artifact=PASS"
+          require_line "$plotpanel_shadow" "production.renderer.default=NATIVE_CANVAS"
+          require_line "$plotpanel_shadow" "feature_flag.value=graphite-offscreen"
+          require_line "$plotpanel_shadow" "provider.binding=INTERNAL_REGISTRY_REFLECTION"
+          require_line "$plotpanel_shadow" "provider.install=PASS"
+          require_line "$plotpanel_shadow" "compose.window=STARTED"
+          require_line "$plotpanel_shadow" "compose.plotpanel=PASS"
+          require_line "$plotpanel_shadow" "compose.plotpanel.render_path=OFFSCREEN_COMPOSITE"
+          require_line "$plotpanel_shadow" "compose.plotpanel.initial_capture=PASS"
+          require_line "$plotpanel_shadow" "compose.plotpanel.resize=PASS"
+          require_line "$plotpanel_shadow" "compose.plotpanel.resized_capture=PASS"
+          require_line "$plotpanel_shadow" "compose.recomposition.after_resize=PASS"
+          require_line "$plotpanel_shadow" "graphite.context.create_count=1"
+          require_line "$plotpanel_shadow" "render_target.reuse=PASS"
+          require_line "$plotpanel_shadow" "render_target.resize=PASS"
+          require_line "$plotpanel_shadow" "image.layout.reuse_transition=PASS"
+          require_line "$plotpanel_shadow" "provider.registration.dispose=PASS"
+          require_line "$plotpanel_shadow" "provider.dispose_count=1"
+          require_line "$plotpanel_shadow" "persistent.context.lifecycle=PASS"
+          require_line "$plotpanel_shadow" "persistent.render_target.lifecycle=PASS"
+          require_line "$plotpanel_shadow" "compose.plotpanel.dispose=PASS"
+          require_line "$plotpanel_shadow" "provider.packaging=PROBE_ONLY"
+          require_line "$plotpanel_shadow" "renderer.adoption=SHADOW_OPT_IN_ONLY"
+          require_line "$plotpanel_shadow" "public.api.change=NONE"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_CAPABLE
+          result=COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2371,7 +2601,11 @@ jobs:
           graphite.canvas=PASS
           graphite.plot_drawable=PASS
           graphite.paint_bridge=PASS
-          plotpanel.integration=OFFSCREEN_COMPOSITE_PROBE
+          plotpanel.integration=PERSISTENT_GRAPHITE_SHADOW
+          plotpanel.production_artifact=PASS
+          plotpanel.resize=PASS
+          plotpanel.recomposition=PASS
+          plotpanel.dispose=PASS
           offscreen.composite=PASS
           offscreen.transfer=CPU_READBACK
           compose.native_canvas.integration=PASS
@@ -2401,8 +2635,8 @@ jobs:
           graphite.backend.dispose=PASS
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
-          renderer.adoption=OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW
+          renderer.adoption=SHADOW_OPT_IN_ONLY
+          next.required=COMPOSE_PLOTPANEL_INTERACTION_REGRESSION
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
