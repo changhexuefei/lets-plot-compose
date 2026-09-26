@@ -100,7 +100,7 @@ jobs:
           mkdir -p compose/lets-plot-compose/build/render-path-contract
           cat > compose/lets-plot-compose/build/render-path-contract/desktop-render-path.txt <<EOF
           schema=1
-          result=GRAPHITE_BACKEND_PROVIDER_CAPABLE
+          result=FEATURE_FLAGGED_RENDER_PATH_CAPABLE
           feature_flag.property=letsplot.compose.desktop.renderPath
           default.path=NATIVE_CANVAS
           offscreen.requested=SUPPORTED
