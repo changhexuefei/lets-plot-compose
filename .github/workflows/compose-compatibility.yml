@@ -2348,6 +2348,160 @@ jobs:
             }
           }
 
+      - name: Run paired PlotPanel native and Graphite performance evidence
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          PLOT_PERFORMANCE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-plotpanel-shadow-probe\build\performance
+        run: |
+          .\gradlew.bat -p graphite-plotpanel-shadow-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
+            runPerformanceNative --stacktrace
+
+          .\gradlew.bat -p graphite-plotpanel-shadow-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
+            runPerformanceGraphite --stacktrace
+
+      - name: Verify and compare PlotPanel performance evidence
+        shell: pwsh
+        run: |
+          $dir = "compose\graphite-plotpanel-shadow-probe\build\performance"
+          $nativeFile = Join-Path $dir "plotpanel-performance-native.txt"
+          $graphiteFile = Join-Path $dir "plotpanel-performance-graphite.txt"
+          $comparisonFile = Join-Path $dir "plotpanel-performance-comparison.txt"
+
+          foreach ($file in @($nativeFile, $graphiteFile)) {
+            if (!(Test-Path $file)) {
+              throw "PlotPanel performance evidence missing: $file"
+            }
+          }
+
+          function Require-Pattern([string]$file, [string]$pattern) {
+            if (!(Select-String -Path $file -Pattern $pattern -Quiet)) {
+              Get-Content $file
+              throw "Performance evidence contract missing from $file : $pattern"
+            }
+          }
+
+          foreach ($pattern in @(
+            '^result=PLOTPANEL_PERFORMANCE_SAMPLE_CAPABLE$',
+            '^render\.path=NATIVE_CANVAS$',
+            '^measurement\.kind=REAL_WINDOW_INPUT_TO_VISIBLE_CHANGE$',
+            '^measurement\.policy=OBSERVATIONAL_ONLY$',
+            '^warmup\.rounds=2$',
+            '^measured\.rounds=4$',
+            '^measured\.interactions=8$',
+            '^interaction\.state_changes=8$',
+            '^interaction\.visible_changes=8$',
+            '^measurement\.samples=8$',
+            '^native\.path=PASS$',
+            '^figure_model\.dispose=PASS$',
+            '^renderer\.adoption=SHADOW_OPT_IN_ONLY$'
+          )) {
+            Require-Pattern $nativeFile $pattern
+          }
+
+          foreach ($pattern in @(
+            '^result=PLOTPANEL_PERFORMANCE_SAMPLE_CAPABLE$',
+            '^render\.path=OFFSCREEN_COMPOSITE$',
+            '^measurement\.kind=REAL_WINDOW_INPUT_TO_VISIBLE_CHANGE$',
+            '^measurement\.policy=OBSERVATIONAL_ONLY$',
+            '^warmup\.rounds=2$',
+            '^measured\.rounds=4$',
+            '^measured\.interactions=8$',
+            '^interaction\.state_changes=8$',
+            '^interaction\.visible_changes=8$',
+            '^measurement\.samples=8$',
+            '^provider\.install=PASS$',
+            '^graphite\.context\.create_count=1$',
+            '^render_target\.create_count=1$',
+            '^render_target\.reuse_count=[1-9][0-9]*$',
+            '^graphite\.context_reuse=PASS$',
+            '^render_target\.reuse=PASS$',
+            '^graphite\.cleanup=PASS$',
+            '^figure_model\.dispose=PASS$',
+            '^renderer\.adoption=SHADOW_OPT_IN_ONLY$'
+          )) {
+            Require-Pattern $graphiteFile $pattern
+          }
+
+          function Read-Kv([string]$file) {
+            $values = @{}
+            foreach ($line in Get-Content $file) {
+              if ($line -match '^([^=]+)=(.*)$') {
+                $values[$matches[1]] = $matches[2]
+              }
+            }
+            return $values
+          }
+
+          $native = Read-Kv $nativeFile
+          $graphite = Read-Kv $graphiteFile
+          $culture = [System.Globalization.CultureInfo]::InvariantCulture
+
+          $nativeMedian = [double]::Parse($native["latency.overall.median_ms"], $culture)
+          $nativeP95 = [double]::Parse($native["latency.overall.p95_ms"], $culture)
+          $nativeMax = [double]::Parse($native["latency.overall.max_ms"], $culture)
+          $graphiteMedian = [double]::Parse($graphite["latency.overall.median_ms"], $culture)
+          $graphiteP95 = [double]::Parse($graphite["latency.overall.p95_ms"], $culture)
+          $graphiteMax = [double]::Parse($graphite["latency.overall.max_ms"], $culture)
+
+          foreach ($value in @($nativeMedian, $nativeP95, $nativeMax, $graphiteMedian, $graphiteP95, $graphiteMax)) {
+            if ($value -le 0 -or [double]::IsNaN($value) -or [double]::IsInfinity($value)) {
+              throw "Invalid performance latency sample: $value"
+            }
+          }
+
+          $medianRatio = $graphiteMedian / $nativeMedian
+          $p95Ratio = $graphiteP95 / $nativeP95
+          $format = {
+            param([double]$value)
+            [string]::Format($culture, "{0:F3}", $value)
+          }
+
+          @"
+          schema=1
+          result=COMPOSE_PLOTPANEL_NATIVE_GRAPHITE_PERFORMANCE_EVIDENCE_CAPABLE
+          measurement.kind=REAL_WINDOW_INPUT_TO_VISIBLE_CHANGE
+          measurement.policy=OBSERVATIONAL_ONLY
+          runner.scope=SAME_WINDOWS_JOB_SEPARATE_JVMS
+          native.samples=8
+          graphite.samples=8
+          native.median_ms=$(& $format $nativeMedian)
+          native.p95_ms=$(& $format $nativeP95)
+          native.max_ms=$(& $format $nativeMax)
+          graphite.median_ms=$(& $format $graphiteMedian)
+          graphite.p95_ms=$(& $format $graphiteP95)
+          graphite.max_ms=$(& $format $graphiteMax)
+          graphite_to_native.median_ratio=$(& $format $medianRatio)
+          graphite_to_native.p95_ratio=$(& $format $p95Ratio)
+          comparison.superiority_gate=NONE
+          production.renderer.default=NATIVE_CANVAS
+          renderer.adoption=SHADOW_OPT_IN_ONLY
+          public.api.change=NONE
+          "@ | Set-Content -Path $comparisonFile -Encoding UTF8
+
+          Get-Content $nativeFile
+          Get-Content $graphiteFile
+          Get-Content $comparisonFile
+
+      - name: Upload PlotPanel native and Graphite performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plotpanel-native-graphite-performance-${{ github.sha }}
+          path: |
+            compose/graphite-plotpanel-shadow-probe/build/performance/plotpanel-performance-native.txt
+            compose/graphite-plotpanel-shadow-probe/build/performance/plotpanel-performance-graphite.txt
+            compose/graphite-plotpanel-shadow-probe/build/performance/plotpanel-performance-comparison.txt
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Upload PlotPanel Graphite interaction stress evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -2433,6 +2587,12 @@ jobs:
           name: graphite-plotpanel-shadow-skiko-0.153.0-${{ github.sha }}
           path: evidence/plotpanel-shadow
 
+      - name: Download PlotPanel native and Graphite performance evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: plotpanel-native-graphite-performance-${{ github.sha }}
+          path: evidence/plotpanel-performance
+
       - name: Verify Graphite frontend readiness chain
         shell: bash
         run: |
@@ -2461,10 +2621,11 @@ jobs:
           render_path="$(find_one evidence/render-path desktop-render-path.txt)"
           graphite_provider="$(find_one evidence/graphite-provider graphite-render-path-provider.txt)"
           plotpanel_shadow="$(find_one evidence/plotpanel-shadow graphite-plotpanel-shadow.txt)"
+          plotpanel_performance="$(find_one evidence/plotpanel-performance plotpanel-performance-comparison.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance"
 
           require_line() {
             local file="$1"
@@ -2644,13 +2805,24 @@ jobs:
           require_line "$plotpanel_shadow" "renderer.adoption=SHADOW_OPT_IN_ONLY"
           require_line "$plotpanel_shadow" "public.api.change=NONE"
 
+          require_line "$plotpanel_performance" "result=COMPOSE_PLOTPANEL_NATIVE_GRAPHITE_PERFORMANCE_EVIDENCE_CAPABLE"
+          require_line "$plotpanel_performance" "measurement.kind=REAL_WINDOW_INPUT_TO_VISIBLE_CHANGE"
+          require_line "$plotpanel_performance" "measurement.policy=OBSERVATIONAL_ONLY"
+          require_line "$plotpanel_performance" "runner.scope=SAME_WINDOWS_JOB_SEPARATE_JVMS"
+          require_line "$plotpanel_performance" "native.samples=8"
+          require_line "$plotpanel_performance" "graphite.samples=8"
+          require_line "$plotpanel_performance" "comparison.superiority_gate=NONE"
+          require_line "$plotpanel_performance" "production.renderer.default=NATIVE_CANVAS"
+          require_line "$plotpanel_performance" "renderer.adoption=SHADOW_OPT_IN_ONLY"
+          require_line "$plotpanel_performance" "public.api.change=NONE"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=COMPOSE_PLOTPANEL_INTERACTION_STRESS_REGRESSION_CAPABLE
+          result=COMPOSE_PLOTPANEL_NATIVE_GRAPHITE_PERFORMANCE_EVIDENCE_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2677,6 +2849,12 @@ jobs:
           plotpanel.stress_context_reuse=PASS
           plotpanel.stress_render_target_reuse=PASS
           plotpanel.stress_resize_boundary=PASS
+          plotpanel.performance_evidence=PASS
+          plotpanel.performance_measurement=REAL_WINDOW_INPUT_TO_VISIBLE_CHANGE
+          plotpanel.performance_policy=OBSERVATIONAL_ONLY
+          plotpanel.performance_native_samples=8
+          plotpanel.performance_graphite_samples=8
+          plotpanel.performance_superiority_gate=NONE
           plotpanel.resize=PASS
           plotpanel.recomposition=PASS
           plotpanel.figure_model_dispose=PASS
@@ -2711,7 +2889,7 @@ jobs:
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=SHADOW_OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_NATIVE_GRAPHITE_PERFORMANCE_EVIDENCE
+          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PACKAGING_EVIDENCE
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
