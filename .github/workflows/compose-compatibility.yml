@@ -1714,6 +1714,148 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+
+  windows-compose-offscreen-integration-probe:
+    needs:
+      - windows-graphite-offscreen-composite-probe
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      GRAPHITE_SKIKO_VERSION: '0.153.0'
+
+    steps:
+      - name: Checkout Compose offscreen integration probe source
+        uses: actions/checkout@v4
+        with:
+          path: compose
+
+      - name: Download Graphite offscreen composite evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: offscreen-evidence
+
+      - name: Resolve and verify Graphite offscreen input
+        shell: pwsh
+        run: |
+          $png = @(Get-ChildItem -Path "offscreen-evidence" -Filter "graphite-offscreen.png" -File -Recurse)
+          $result = @(Get-ChildItem -Path "offscreen-evidence" -Filter "graphite-offscreen-composite.txt" -File -Recurse)
+
+          if ($png.Count -ne 1) {
+            Get-ChildItem -Path "offscreen-evidence" -File -Recurse | Select-Object -ExpandProperty FullName
+            throw "Expected exactly one graphite-offscreen.png, found $($png.Count)"
+          }
+          if ($result.Count -ne 1) {
+            Get-ChildItem -Path "offscreen-evidence" -File -Recurse | Select-Object -ExpandProperty FullName
+            throw "Expected exactly one graphite-offscreen-composite.txt, found $($result.Count)"
+          }
+
+          foreach ($pattern in @(
+            '^result=OFFSCREEN_COMPOSITE_CAPABLE$',
+            '^graphite.snapshot=PASS$',
+            '^graphite.readback=PASS$',
+            '^offscreen.transfer=CPU_READBACK$',
+            '^offscreen.composite=PASS$',
+            '^comparison=PASS$',
+            '^renderer.adoption=NOT_STARTED$'
+          )) {
+            if (!(Select-String -Path $result[0].FullName -Pattern $pattern -Quiet)) {
+              throw "Upstream Graphite offscreen contract missing: $pattern"
+            }
+          }
+
+          "GRAPHITE_COMPOSE_SOURCE_PNG=$($png[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "source.png=$($png[0].FullName)"
+          "source.contract=$($result[0].FullName)"
+
+      - name: Set up JDK 21 Compose integration runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Compose integration Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Verify Compose 1.13 and Skiko 0.153 dependency set
+        working-directory: compose
+        shell: pwsh
+        run: |
+          $probeDir = "graphite-compose-offscreen-integration-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "graphite-compose-offscreen-integration-dependencies.txt"
+
+          .\gradlew.bat -p graphite-compose-offscreen-integration-probe "-PgraphiteSkikoVersion=$env:GRAPHITE_SKIKO_VERSION" dependencyInsight --dependency skiko-awt --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          .\gradlew.bat -p graphite-compose-offscreen-integration-probe "-PgraphiteSkikoVersion=$env:GRAPHITE_SKIKO_VERSION" dependencies --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+
+          foreach ($pattern in @(
+            "org\.jetbrains\.compose\.desktop:desktop-jvm-windows-x64:1\.13\.0-alpha01",
+            "org\.jetbrains\.skiko:skiko-awt:0\.153\.0",
+            "org\.jetbrains\.skiko:skiko-awt-runtime-windows-x64:0\.153\.0"
+          )) {
+            if (!(Select-String -Path $report -Pattern $pattern -Quiet)) {
+              throw "Compose offscreen integration dependency evidence missing: $pattern"
+            }
+          }
+
+      - name: Run Compose offscreen integration probe
+        working-directory: compose
+        shell: pwsh
+        env:
+          GRAPHITE_COMPOSE_PROBE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-compose-offscreen-integration-probe\build\probe
+        run: .\gradlew.bat -p graphite-compose-offscreen-integration-probe "-PgraphiteSkikoVersion=$env:GRAPHITE_SKIKO_VERSION" clean run --stacktrace
+
+      - name: Verify Compose offscreen integration contract
+        shell: pwsh
+        run: |
+          $result = "compose\graphite-compose-offscreen-integration-probe\build\probe\graphite-compose-offscreen-integration.txt"
+          $actual = "compose\graphite-compose-offscreen-integration-probe\build\probe\compose-native-canvas.png"
+          $expected = "compose\graphite-compose-offscreen-integration-probe\build\probe\compose-native-canvas-expected.png"
+
+          foreach ($file in @($result, $actual, $expected)) {
+            if (!(Test-Path $file)) { throw "Compose offscreen integration evidence missing: $file" }
+          }
+
+          Get-Content $result
+          foreach ($pattern in @(
+            '^result=COMPOSE_OFFSCREEN_INTEGRATION_CAPABLE$',
+            '^source.provenance=GRAPHITE_OFFSCREEN_ARTIFACT$',
+            '^offscreen.transfer=CPU_READBACK$',
+            '^compose.version=1\.13\.0-alpha01$',
+            '^skiko.version=0\.153\.0$',
+            '^compose.window=STARTED$',
+            '^compose.canvas=PASS$',
+            '^compose.native_canvas=PASS$',
+            '^compose.native_canvas.draw_image=PASS$',
+            '^compose.screen_capture=PASS$',
+            '^comparison=PASS$',
+            '^production.renderer.switch=NOT_IMPLEMENTED$',
+            '^renderer.adoption=NOT_STARTED$'
+          )) {
+            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
+              throw "Compose offscreen integration contract missing: $pattern"
+            }
+          }
+
+      - name: Upload Compose offscreen integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-compose-offscreen-integration-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            compose/graphite-compose-offscreen-integration-probe/build/probe/graphite-compose-offscreen-integration.txt
+            compose/graphite-compose-offscreen-integration-probe/build/probe/compose-native-canvas.png
+            compose/graphite-compose-offscreen-integration-probe/build/probe/compose-native-canvas-expected.png
+            compose/graphite-compose-offscreen-integration-probe/build/probe/graphite-compose-offscreen-integration-dependencies.txt
+          if-no-files-found: warn
+          retention-days: 90
+
   graphite-renderer-readiness-gate:
     needs:
       - windows-compose-1-13-skiko-0-153-recompile-smoke
@@ -1721,6 +1863,7 @@ jobs:
       - windows-graphite-plot-drawable-probe
       - windows-graphite-paint-bridge-probe
       - windows-graphite-offscreen-composite-probe
+      - windows-compose-offscreen-integration-probe
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -1755,6 +1898,12 @@ jobs:
           name: graphite-offscreen-composite-skiko-0.153.0-${{ github.sha }}
           path: evidence/offscreen-composite
 
+      - name: Download Compose offscreen integration evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-compose-offscreen-integration-skiko-0.153.0-${{ github.sha }}
+          path: evidence/compose-offscreen
+
       - name: Verify Graphite frontend readiness chain
         shell: bash
         run: |
@@ -1779,10 +1928,11 @@ jobs:
           plot="$(find_one evidence/plot-drawable graphite-plot-drawable.txt)"
           bridge="$(find_one evidence/paint-bridge graphite-paint-bridge.txt)"
           offscreen="$(find_one evidence/offscreen-composite graphite-offscreen-composite.txt)"
+          compose_offscreen="$(find_one evidence/compose-offscreen graphite-compose-offscreen-integration.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen"
 
           require_line() {
             local file="$1"
@@ -1827,13 +1977,25 @@ jobs:
           require_line "$offscreen" "production.renderer.switch=NOT_IMPLEMENTED"
           require_line "$offscreen" "renderer.adoption=NOT_STARTED"
 
+          require_line "$compose_offscreen" "result=COMPOSE_OFFSCREEN_INTEGRATION_CAPABLE"
+          require_line "$compose_offscreen" "source.provenance=GRAPHITE_OFFSCREEN_ARTIFACT"
+          require_line "$compose_offscreen" "offscreen.transfer=CPU_READBACK"
+          require_line "$compose_offscreen" "compose.window=STARTED"
+          require_line "$compose_offscreen" "compose.canvas=PASS"
+          require_line "$compose_offscreen" "compose.native_canvas=PASS"
+          require_line "$compose_offscreen" "compose.native_canvas.draw_image=PASS"
+          require_line "$compose_offscreen" "compose.screen_capture=PASS"
+          require_line "$compose_offscreen" "comparison=PASS"
+          require_line "$compose_offscreen" "production.renderer.switch=NOT_IMPLEMENTED"
+          require_line "$compose_offscreen" "renderer.adoption=NOT_STARTED"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=GRAPHITE_OFFSCREEN_COMPOSITE_CAPABLE
+          result=GRAPHITE_COMPOSE_OFFSCREEN_INTEGRATION_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -1845,10 +2007,10 @@ jobs:
           plotpanel.integration=OFFSCREEN_COMPOSITE_PROBE
           offscreen.composite=PASS
           offscreen.transfer=CPU_READBACK
-          compose.native_canvas.integration=SIMULATED_RASTER_CANVAS
+          compose.native_canvas.integration=PASS
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=NOT_STARTED
-          next.required=COMPOSE_OFFSCREEN_INTEGRATION_PROBE
+          next.required=FEATURE_FLAGGED_RENDERER_INTEGRATION
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
