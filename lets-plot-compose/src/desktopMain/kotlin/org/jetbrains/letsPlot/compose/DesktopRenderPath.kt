@@ -7,6 +7,7 @@ package org.jetbrains.letsPlot.compose
 
 import org.jetbrains.letsPlot.commons.geometry.DoubleVector
 import org.jetbrains.letsPlot.compose.canvas.SkiaContext2d
+import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.skia.Canvas
 
 internal const val DESKTOP_RENDER_PATH_PROPERTY = "letsplot.compose.desktop.renderPath"
@@ -28,8 +29,26 @@ internal fun interface DesktopOffscreenRenderer {
 }
 
 internal object DesktopOffscreenRendererRegistry {
-    @Volatile
-    var renderer: DesktopOffscreenRenderer? = null
+    private val lock = Any()
+    private var renderer: DesktopOffscreenRenderer? = null
+
+    fun install(renderer: DesktopOffscreenRenderer): Registration {
+        synchronized(lock) {
+            this.renderer = renderer
+        }
+
+        return Registration.onRemove {
+            synchronized(lock) {
+                if (this.renderer === renderer) {
+                    this.renderer = null
+                }
+            }
+        }
+    }
+
+    fun current(): DesktopOffscreenRenderer? {
+        return synchronized(lock) { renderer }
+    }
 }
 
 internal fun resolveDesktopRenderPath(
@@ -65,7 +84,7 @@ internal fun paintDesktopPlot(
     paint: (SkiaContext2d) -> Unit
 ): DesktopRenderPath {
     if (requestedPath == DesktopRenderPath.OFFSCREEN_COMPOSITE && width > 0 && height > 0) {
-        DesktopOffscreenRendererRegistry.renderer?.let { renderer ->
+        DesktopOffscreenRendererRegistry.current()?.let { renderer ->
             renderer.paint(
                 targetCanvas = canvas,
                 width = width,
