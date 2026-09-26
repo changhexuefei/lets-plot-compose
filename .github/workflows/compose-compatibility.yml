@@ -869,7 +869,7 @@ jobs:
             "org\.jetbrains\.compose\.desktop:desktop-jvm-windows-x64:1\.13\.0-alpha01",
             "org\.jetbrains\.skiko:skiko:0\.153\.0",
             "org\.jetbrains\.skiko:skiko-awt:0\.153\.0",
-            "org\.jetbrains\.skiko:skiko-awt-runtime-windows-x64:0\.153\.0"
+            "org\.jetbrains\.skiko:skiko-awt-runtime-all:0\.153\.0"
           )) {
             if (!(Select-String -Path $report -Pattern $pattern -Quiet)) {
               throw "Recompiled frontend runtime dependency evidence missing: $pattern"
@@ -895,6 +895,7 @@ jobs:
             "frontend.recompiled=true",
             "frontend.recompiled.skiko=$env:SMOKE_SKIKO_VERSION",
             "runtime.skiko=$env:SMOKE_SKIKO_VERSION",
+            "runtime.skiko.artifact=skiko-awt-runtime-all",
             "graphite.runtime=NOT_INCLUDED",
             "graphite.renderer=NOT_ATTEMPTED",
             "renderer.adoption=NOT_STARTED",
