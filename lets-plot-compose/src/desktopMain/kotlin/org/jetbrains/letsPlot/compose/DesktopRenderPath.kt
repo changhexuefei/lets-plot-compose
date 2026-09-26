@@ -26,6 +26,14 @@ internal fun interface DesktopOffscreenRenderer {
         plotPosition: DoubleVector,
         paint: (SkiaContext2d) -> Unit
     )
+
+    /**
+     * Releases resources owned by this provider.
+     *
+     * The default is a no-op so lightweight/stateless providers remain SAM-compatible.
+     * Stateful GPU providers override this to release persistent context/device resources.
+     */
+    fun dispose() {}
 }
 
 internal object DesktopOffscreenRendererRegistry {
@@ -43,6 +51,7 @@ internal object DesktopOffscreenRendererRegistry {
                     this.renderer = null
                 }
             }
+            renderer.dispose()
         }
     }
 
