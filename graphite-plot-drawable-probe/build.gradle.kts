@@ -17,6 +17,7 @@ dependencies {
     implementation("org.jetbrains.lets-plot:lets-plot-common:4.11.1-SNAPSHOT")
     implementation("org.jetbrains.lets-plot:lets-plot-kotlin:4.15.1-SNAPSHOT")
     implementation("org.jetbrains.lets-plot:lets-plot-compose-desktop:3.2.3-SNAPSHOT")
+    implementation("org.slf4j:slf4j-simple:2.0.17")
 
     implementation("org.jetbrains.skiko:skiko-awt:${skikoVersion.get()}")
     implementation("org.jetbrains.skiko:skiko-graphite-awt:${skikoVersion.get()}")
