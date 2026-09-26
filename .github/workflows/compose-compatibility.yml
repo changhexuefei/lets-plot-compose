@@ -1751,7 +1751,7 @@ jobs:
 
   windows-graphite-render-path-provider-probe:
     needs:
-      - windows-graphite-render-path-provider-probe
+      - windows-graphite-offscreen-composite-probe
     runs-on: windows-latest
     timeout-minutes: 25
     env:
