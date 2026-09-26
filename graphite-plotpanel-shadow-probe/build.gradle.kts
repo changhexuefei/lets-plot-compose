@@ -17,6 +17,7 @@ val lwjglVersion = providers.gradleProperty("lwjglVersion").orElse("3.4.3")
 
 dependencies {
     implementation(compose.desktop.currentOs)
+    implementation(compose.material)
     implementation("org.jetbrains.lets-plot:lets-plot-common:4.11.1-SNAPSHOT")
     implementation("org.jetbrains.lets-plot:lets-plot-kotlin:4.15.1-SNAPSHOT")
     implementation("org.jetbrains.lets-plot:lets-plot-compose-desktop:3.2.3-SNAPSHOT")
@@ -46,6 +47,8 @@ application {
 }
 
 tasks.named<JavaExec>("run") {
+    systemProperty("java.awt.headless", "false")
+    systemProperty("skiko.renderApi", "SOFTWARE")
     environment("GRAPHITE_SHADOW_OUTPUT_DIR", layout.buildDirectory.dir("probe").get().asFile.absolutePath)
     environment("GRAPHITE_SKIKO_VERSION", skikoVersion.get())
     environment("GRAPHITE_LWJGL_VERSION", lwjglVersion.get())
