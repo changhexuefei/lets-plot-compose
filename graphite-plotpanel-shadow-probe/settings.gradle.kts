@@ -1,6 +1,7 @@
 pluginManagement {
     repositories {
         gradlePluginPortal()
+        google()
         mavenCentral()
         maven("https://packages.jetbrains.team/maven/p/cmp/dev")
     }
@@ -18,6 +19,7 @@ dependencyResolutionManagement {
         System.getenv("LETS_PLOT_COMPOSE_REPO")?.takeIf { it.isNotBlank() }?.let { repo ->
             maven { url = uri(repo) }
         }
+        google()
         mavenCentral()
         maven("https://packages.jetbrains.team/maven/p/cmp/dev")
     }
