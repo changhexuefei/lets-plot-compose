@@ -233,6 +233,8 @@ fun PlotPanelComposeCanvas(
 
                     paintDesktopPlot(
                         canvas = drawContext.canvas.nativeCanvas,
+                        width = size.width.toInt(),
+                        height = size.height.toInt(),
                         density = density.toDouble(),
                         plotPosition = plotPosition
                     ) { context ->
