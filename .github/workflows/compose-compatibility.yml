@@ -1560,8 +1560,8 @@ jobs:
             mapfile -t matches < <(find "$root" -type f -name "$name" -print)
 
             if [ "${#matches[@]}" -ne 1 ]; then
-              echo "Expected exactly one $name under $root, found ${#matches[@]}"
-              find "$root" -maxdepth 8 -type f -print | sort
+              echo "Expected exactly one $name under $root, found ${#matches[@]}" >&2
+              find "$root" -maxdepth 8 -type f -print | sort >&2
               exit 1
             fi
 
@@ -1580,8 +1580,10 @@ jobs:
           require_line() {
             local file="$1"
             local expected="$2"
-            if ! grep -Fxq "$expected" "$file"; then
-              echo "Missing readiness contract in $file: $expected"
+            if ! tr -d '\r' < "$file" | grep -Fxq "$expected"; then
+              echo "Missing readiness contract in $file: $expected" >&2
+              echo "--- normalized evidence: $file ---" >&2
+              tr -d '\r' < "$file" >&2
               exit 1
             fi
           }
