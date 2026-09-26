@@ -1515,4 +1515,114 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+  graphite-renderer-readiness-gate:
+    needs:
+      - windows-compose-1-13-skiko-0-153-recompile-smoke
+      - windows-graphite-canvas-rendering-probe
+      - windows-graphite-plot-drawable-probe
+      - windows-graphite-paint-bridge-probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download Skiko 0.153 recompile evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-compose-recompiled-compose-1.13.0-alpha01-skiko-0.153.0-${{ github.sha }}
+          path: evidence/recompile
+
+      - name: Download Graphite Canvas evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-canvas-rendering-skiko-0.153.0-${{ github.sha }}
+          path: evidence/canvas
+
+      - name: Download Graphite PlotCanvasDrawable evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-plot-drawable-skiko-0.153.0-${{ github.sha }}
+          path: evidence/plot-drawable
+
+      - name: Download Graphite paint bridge evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-paint-bridge-skiko-0.153.0-${{ github.sha }}
+          path: evidence/paint-bridge
+
+      - name: Verify Graphite frontend readiness chain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          recompile="evidence/recompile/baseline-manifest.txt"
+          canvas="evidence/canvas/graphite-canvas-rendering.txt"
+          plot="evidence/plot-drawable/graphite-plot-drawable.txt"
+          bridge="evidence/paint-bridge/graphite-paint-bridge.txt"
+
+          for file in "$recompile" "$canvas" "$plot" "$bridge"; do
+            test -f "$file" || { echo "Missing readiness evidence: $file"; exit 1; }
+          done
+
+          require_line() {
+            local file="$1"
+            local expected="$2"
+            if ! grep -Fxq "$expected" "$file"; then
+              echo "Missing readiness contract in $file: $expected"
+              exit 1
+            fi
+          }
+
+          require_line "$recompile" "probe.result=PASS"
+          require_line "$recompile" "frontend.recompiled=true"
+          require_line "$recompile" "frontend.recompiled.skiko=0.153.0"
+          require_line "$recompile" "renderer.adoption=NOT_STARTED"
+
+          require_line "$canvas" "result=CANVAS_RENDERING_CAPABLE"
+          require_line "$canvas" "bridge.software=PASS"
+          require_line "$canvas" "bridge.graphite=PASS"
+          require_line "$canvas" "comparison=PASS"
+
+          require_line "$plot" "result=PLOT_DRAWABLE_CAPABLE"
+          require_line "$plot" "plot.drawable.paint=PASS"
+          require_line "$plot" "graphite.submit=PASS"
+          require_line "$plot" "comparison=PASS"
+
+          require_line "$bridge" "result=PAINT_BRIDGE_CAPABLE"
+          require_line "$bridge" "software.paint_bridge=PASS"
+          require_line "$bridge" "graphite.paint_bridge=PASS"
+          require_line "$bridge" "plotpanel.integration=PAINT_BRIDGE_ONLY"
+          require_line "$bridge" "renderer.adoption=NOT_STARTED"
+
+      - name: Build Graphite renderer readiness manifest
+        shell: bash
+        run: |
+          mkdir -p evidence/readiness
+          cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
+          schema=1
+          result=GRAPHITE_FRONTEND_PATH_CAPABLE
+          platform=windows-probe-chain
+          jdk=21
+          compose.preview=1.13.0-alpha01
+          skiko=0.153.0
+          software.control=PASS
+          graphite.canvas=PASS
+          graphite.plot_drawable=PASS
+          graphite.paint_bridge=PASS
+          plotpanel.integration=PAINT_BRIDGE_ONLY
+          offscreen.composite=NOT_TESTED
+          production.renderer.switch=NOT_IMPLEMENTED
+          renderer.adoption=NOT_STARTED
+          next.required=OFFSCREEN_COMPOSITE_PROBE
+          workflow.sha=${{ github.sha }}
+          workflow.run_id=${{ github.run_id }}
+          EOF
+          cat evidence/readiness/graphite-renderer-readiness.txt
+
+      - name: Upload Graphite renderer readiness evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-renderer-readiness-${{ github.sha }}
+          path: evidence/readiness/graphite-renderer-readiness.txt
+          if-no-files-found: error
+          retention-days: 90
 
