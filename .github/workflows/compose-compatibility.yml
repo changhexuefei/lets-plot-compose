@@ -1517,7 +1517,7 @@ jobs:
 
   windows-graphite-offscreen-composite-probe:
     needs:
-      - windows-graphite-offscreen-composite-probe
+      - windows-graphite-plot-drawable-probe
     runs-on: windows-latest
     timeout-minutes: 25
     env:
@@ -1675,367 +1675,24 @@ jobs:
 
           Get-Content $result
           foreach ($pattern in @(
-            '^result=OFFSCREEN_COMPOSITE_CAPABLE
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composited.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^renderer.entry=PlotCanvasDrawable -> paintOnSkiaCanvas -> Graphite offscreen -> CPU readback -> Skia Image -> raster Canvas
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^bridge.source=DesktopSkiaPaintBridge\.kt
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^bridge.density=1\.25
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^bridge.plot_position=24\.0,20\.0
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^software.paint_bridge=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^graphite.paint_bridge=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^plot.drawable.paint=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^graphite.submit=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^graphite.snapshot=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^graphite.readback=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^offscreen.transfer=CPU_READBACK
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^software.composite=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^offscreen.composite=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^comparison=PASS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^compose.native_canvas.integration=SIMULATED_RASTER_CANVAS
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^production.renderer.switch=NOT_IMPLEMENTED
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-,
-            '^renderer.adoption=NOT_STARTED
-            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
-              throw "Graphite offscreen composite contract missing: $pattern"
-            }
-          }
-
-      - name: Upload Graphite offscreen composite evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphite-offscreen-composite-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
-          path: |
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
-            compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
-            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
-            compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
-          if-no-files-found: warn
-          retention-days: 90
-
+            '^result=OFFSCREEN_COMPOSITE_CAPABLE$',
+            '^renderer.entry=PlotCanvasDrawable -> paintOnSkiaCanvas -> Graphite offscreen -> CPU readback -> Skia Image -> raster Canvas$',
+            '^bridge.source=DesktopSkiaPaintBridge\.kt$',
+            '^bridge.density=1\.25$',
+            '^bridge.plot_position=24\.0,20\.0$',
+            '^software.paint_bridge=PASS$',
+            '^graphite.paint_bridge=PASS$',
+            '^plot.drawable.paint=PASS$',
+            '^graphite.submit=PASS$',
+            '^graphite.snapshot=PASS$',
+            '^graphite.readback=PASS$',
+            '^offscreen.transfer=CPU_READBACK$',
+            '^software.composite=PASS$',
+            '^offscreen.composite=PASS$',
+            '^comparison=PASS$',
+            '^compose.native_canvas.integration=SIMULATED_RASTER_CANVAS$',
+            '^production.renderer.switch=NOT_IMPLEMENTED$',
+            '^renderer.adoption=NOT_STARTED$'
           )) {
             if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
               throw "Graphite offscreen composite contract missing: $pattern"
@@ -2051,6 +1708,7 @@ jobs:
             compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite.txt
             compose/graphite-offscreen-composite-probe/build/probe/software-direct.png
             compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen.png
+            compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composited.png
             compose/graphite-offscreen-composite-probe/build/probe/graphite-offscreen-composite-dependencies.txt
             compose/graphite-offscreen-composite-probe/build/probe/windows-vulkan-environment.txt
           if-no-files-found: warn
