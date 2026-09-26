@@ -110,20 +110,31 @@ class DesktopRenderPathTest {
     }
 
     @Test
-    fun staleRegistrationCannotClearReplacementProvider() {
+    fun staleRegistrationDisposesItsProviderWithoutClearingReplacement() {
         assertNull(DesktopOffscreenRendererRegistry.current())
 
         var firstInvoked = false
         var secondInvoked = false
-        val first = DesktopOffscreenRendererRegistry.install(
-            passthroughRenderer { firstInvoked = true }
+        var firstDisposeCount = 0
+        var secondDisposeCount = 0
+
+        val firstRenderer = lifecycleRenderer(
+            onPaint = { firstInvoked = true },
+            onDispose = { firstDisposeCount++ }
         )
-        val second = DesktopOffscreenRendererRegistry.install(
-            passthroughRenderer { secondInvoked = true }
+        val secondRenderer = lifecycleRenderer(
+            onPaint = { secondInvoked = true },
+            onDispose = { secondDisposeCount++ }
         )
+
+        val first = DesktopOffscreenRendererRegistry.install(firstRenderer)
+        val second = DesktopOffscreenRendererRegistry.install(secondRenderer)
 
         try {
             first.dispose()
+            assertEquals(1, firstDisposeCount)
+            assertEquals(0, secondDisposeCount)
+            assertTrue(DesktopOffscreenRendererRegistry.current() === secondRenderer)
 
             Surface.makeRasterN32Premul(24, 24).use { surface ->
                 val effective = paintDesktopPlot(
@@ -143,6 +154,8 @@ class DesktopRenderPathTest {
             second.dispose()
         }
 
+        assertEquals(1, firstDisposeCount)
+        assertEquals(1, secondDisposeCount)
         assertNull(DesktopOffscreenRendererRegistry.current())
     }
 
@@ -245,6 +258,34 @@ class DesktopRenderPathTest {
                 plotPosition = plotPosition,
                 paint = paint
             )
+        }
+    }
+
+    private fun lifecycleRenderer(
+        onPaint: () -> Unit,
+        onDispose: () -> Unit
+    ): DesktopOffscreenRenderer {
+        return object : DesktopOffscreenRenderer {
+            override fun paint(
+                targetCanvas: org.jetbrains.skia.Canvas,
+                width: Int,
+                height: Int,
+                density: Double,
+                plotPosition: DoubleVector,
+                paint: (org.jetbrains.letsPlot.compose.canvas.SkiaContext2d) -> Unit
+            ) {
+                onPaint()
+                paintOnSkiaCanvas(
+                    canvas = targetCanvas,
+                    density = density,
+                    plotPosition = plotPosition,
+                    paint = paint
+                )
+            }
+
+            override fun dispose() {
+                onDispose()
+            }
         }
     }
 
