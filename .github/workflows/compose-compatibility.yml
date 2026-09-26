@@ -1323,4 +1323,196 @@ jobs:
             compose/graphite-plot-drawable-probe/build/probe/windows-vulkan-environment.txt
           if-no-files-found: warn
           retention-days: 90
+  windows-graphite-paint-bridge-probe:
+    needs:
+      - windows-graphite-plot-drawable-probe
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      GRAPHITE_SKIKO_VERSION: '0.153.0'
+      GRAPHITE_LWJGL_VERSION: '3.4.3'
+
+    steps:
+      - name: Checkout paint bridge probe source
+        uses: actions/checkout@v4
+        with:
+          path: compose
+
+      - name: Download frontend Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download recompiled Compose Maven repository
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-compose-recompiled-maven-${{ github.sha }}
+          path: compose-recompiled
+
+      - name: Set up JDK 21 paint bridge runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up paint bridge Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Capture Windows Vulkan environment
+        shell: pwsh
+        run: |
+          $probeDir = "compose\graphite-paint-bridge-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          "os=$([System.Environment]::OSVersion.VersionString)" | Set-Content $report
+          "vulkan.loader.exists=$(Test-Path "$env:SystemRoot\System32\vulkan-1.dll")" | Add-Content $report
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, DriverVersion, AdapterRAM |
+            Format-List | Out-String | Add-Content $report
+          Get-Content $report
+
+      - name: Configure browser SwiftShader Vulkan ICD
+        shell: pwsh
+        run: |
+          $probeDir = "compose\graphite-paint-bridge-probe\build\probe"
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          $roots = @(
+            "$env:ProgramFiles\Google\Chrome\Application",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application",
+            "$env:ProgramFiles\Microsoft\Edge\Application",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          $icd = $roots |
+            ForEach-Object { Get-ChildItem -Path $_ -Filter 'vk_swiftshader_icd.json' -File -Recurse -ErrorAction SilentlyContinue } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if ($null -ne $icd) {
+            $json = Get-Content $icd.FullName -Raw | ConvertFrom-Json
+            $resolvedLibrary = Join-Path $icd.Directory.FullName $json.ICD.library_path
+            if (!(Test-Path $resolvedLibrary)) {
+              throw "Browser SwiftShader ICD manifest found, but its library is missing: $resolvedLibrary"
+            }
+
+            $directDir = Join-Path $env:RUNNER_TEMP 'letsplot-swiftshader-vulkan-paint-bridge'
+            New-Item -ItemType Directory -Force -Path $directDir | Out-Null
+            $directDll = Join-Path $directDir 'vulkan-1.dll'
+            Copy-Item -Path $resolvedLibrary -Destination $directDll -Force
+
+            "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "VK_ICD_FILENAMES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_PROVIDER=browser-swiftshader-direct" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_DIRECT_DLL=$directDll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+            "vulkan.provider=browser-swiftshader-direct" | Add-Content $report
+            "vulkan.icd=$($icd.FullName)" | Add-Content $report
+            "vulkan.icd.library=$resolvedLibrary" | Add-Content $report
+            "vulkan.direct.dll=$directDll" | Add-Content $report
+          } else {
+            "GRAPHITE_VULKAN_PROVIDER=system" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "vulkan.provider=system" | Add-Content $report
+            "vulkan.icd=not-found" | Add-Content $report
+          }
+
+          Get-Content $report
+
+      - name: Verify paint bridge dependency set
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+        run: |
+          $probeDir = "graphite-paint-bridge-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "graphite-paint-bridge-dependencies.txt"
+
+          .\gradlew.bat -p graphite-paint-bridge-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency lets-plot-compose-desktop --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          .\gradlew.bat -p graphite-paint-bridge-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency skiko-graphite --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+
+          foreach ($pattern in @(
+            "org\.jetbrains\.lets-plot:lets-plot-compose-desktop:3\.2\.3-SNAPSHOT",
+            "org\.jetbrains\.skiko:skiko-graphite-awt:0\.153\.0",
+            "org\.jetbrains\.skiko:skiko-graphite-awt-runtime-windows-x64:0\.153\.0"
+          )) {
+            if (!(Select-String -Path $report -Pattern $pattern -Quiet)) {
+              throw "Paint bridge dependency evidence missing: $pattern"
+            }
+          }
+
+      - name: Run Graphite paint bridge probe
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          GRAPHITE_PROBE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-paint-bridge-probe\build\probe
+        run: |
+          .\gradlew.bat -p graphite-paint-bridge-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
+            clean graphitePaintBridgeProbe --stacktrace
+
+      - name: Verify Graphite paint bridge contract
+        shell: pwsh
+        run: |
+          $result = "compose\graphite-paint-bridge-probe\build\probe\graphite-paint-bridge.txt"
+          $software = "compose\graphite-paint-bridge-probe\build\probe\software-paint-bridge.png"
+          $graphite = "compose\graphite-paint-bridge-probe\build\probe\graphite-paint-bridge.png"
+
+          foreach ($file in @($result, $software, $graphite)) {
+            if (!(Test-Path $file)) { throw "Graphite paint bridge evidence missing: $file" }
+          }
+
+          Get-Content $result
+          foreach ($pattern in @(
+            '^result=PAINT_BRIDGE_CAPABLE$',
+            '^renderer.entry=paintOnSkiaCanvas -> PlotCanvasDrawable\.paint$',
+            '^bridge.source=DesktopSkiaPaintBridge\.kt$',
+            '^bridge.density=1\.25$',
+            '^bridge.plot_position=24\.0,20\.0$',
+            '^software.paint_bridge=PASS$',
+            '^graphite.paint_bridge=PASS$',
+            '^plot.drawable.paint=PASS$',
+            '^graphite.submit=PASS$',
+            '^graphite.readback=PASS$',
+            '^comparison=PASS$',
+            '^plotpanel.integration=PAINT_BRIDGE_ONLY$',
+            '^renderer.adoption=NOT_STARTED$'
+          )) {
+            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
+              throw "Graphite paint bridge contract missing: $pattern"
+            }
+          }
+
+      - name: Upload Graphite paint bridge evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-paint-bridge-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            compose/graphite-paint-bridge-probe/build/probe/graphite-paint-bridge.txt
+            compose/graphite-paint-bridge-probe/build/probe/software-paint-bridge.png
+            compose/graphite-paint-bridge-probe/build/probe/graphite-paint-bridge.png
+            compose/graphite-paint-bridge-probe/build/probe/graphite-paint-bridge-dependencies.txt
+            compose/graphite-paint-bridge-probe/build/probe/windows-vulkan-environment.txt
+          if-no-files-found: warn
+          retention-days: 90
+
 
