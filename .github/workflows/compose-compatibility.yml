@@ -1856,6 +1856,145 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+
+  windows-feature-flagged-renderer-probe:
+    needs:
+      - core-jvm-bundle
+      - windows-compose-1-13-skiko-0-153-recompile-smoke
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      GRAPHITE_SKIKO_VERSION: '0.153.0'
+
+    steps:
+      - name: Checkout feature-flagged renderer probe source
+        uses: actions/checkout@v4
+        with:
+          path: compose
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download recompiled Compose Maven repository
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-compose-recompiled-maven-${{ github.sha }}
+          path: compose-recompiled
+
+      - name: Set up JDK 21 feature-flag runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up feature-flag Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Verify feature-flagged renderer dependency set
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+        run: |
+          $probeDir = "feature-flagged-renderer-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "feature-flagged-renderer-dependencies.txt"
+
+          .\gradlew.bat -p feature-flagged-renderer-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" dependencyInsight --dependency lets-plot-compose-desktop --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          .\gradlew.bat -p feature-flagged-renderer-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" dependencyInsight --dependency skiko-awt --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+
+          foreach ($pattern in @(
+            "org\.jetbrains\.lets-plot:lets-plot-compose-desktop:3\.2\.3-SNAPSHOT",
+            "org\.jetbrains\.skiko:skiko-awt:0\.153\.0",
+            "org\.jetbrains\.skiko:skiko-awt-runtime-windows-x64:0\.153\.0"
+          )) {
+            if (!(Select-String -Path $report -Pattern $pattern -Quiet)) {
+              throw "Feature-flagged renderer dependency evidence missing: $pattern"
+            }
+          }
+
+          if (Select-String -Path $report -Pattern "skiko-graphite" -Quiet) {
+            throw "Feature-flagged renderer production seam must not require a Graphite dependency"
+          }
+
+      - name: Run feature-flagged renderer probe
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          FEATURE_FLAGGED_RENDERER_PROBE_OUTPUT_DIR: ${{ github.workspace }}\compose\feature-flagged-renderer-probe\build\probe
+        run: .\gradlew.bat -p feature-flagged-renderer-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" clean featureFlaggedRendererProbe --stacktrace
+
+      - name: Verify PlotPanel feature-flag seam integration
+        shell: pwsh
+        run: |
+          $source = "compose\lets-plot-compose\src\desktopMain\kotlin\org\jetbrains\letsPlot\compose\PlotPanelComposeCanvas.kt"
+          $result = "compose\feature-flagged-renderer-probe\build\probe\feature-flagged-renderer.txt"
+
+          if (!(Select-String -Path $source -Pattern 'paintPlotOnDesktopCanvas\(' -Quiet)) {
+            throw "PlotPanelComposeCanvas is not routed through paintPlotOnDesktopCanvas"
+          }
+          if (!(Test-Path $result)) {
+            throw "Feature-flagged renderer evidence missing: $result"
+          }
+
+          "plotpanel.integration=FEATURE_FLAGGED_RENDERER_SEAM" | Add-Content $result
+
+      - name: Verify feature-flagged renderer contract
+        shell: pwsh
+        run: |
+          $result = "compose\feature-flagged-renderer-probe\build\probe\feature-flagged-renderer.txt"
+          $direct = "compose\feature-flagged-renderer-probe\build\probe\direct-skia.png"
+          $offscreen = "compose\feature-flagged-renderer-probe\build\probe\experimental-offscreen-raster.png"
+
+          foreach ($file in @($result, $direct, $offscreen)) {
+            if (!(Test-Path $file)) { throw "Feature-flagged renderer evidence missing: $file" }
+          }
+
+          Get-Content $result
+          foreach ($pattern in @(
+            '^result=FEATURE_FLAGGED_RENDERER_CAPABLE$',
+            '^renderer.default=DIRECT_SKIA$',
+            '^default.behavior.unchanged=PASS$',
+            '^renderer.flagged=EXPERIMENTAL_OFFSCREEN_RASTER$',
+            '^renderer.system_property_precedence=PASS$',
+            '^renderer.unknown_flag_fallback=DIRECT_SKIA$',
+            '^direct.paint=PASS$',
+            '^offscreen.paint=PASS$',
+            '^comparison=PASS$',
+            '^plotpanel.integration=FEATURE_FLAGGED_RENDERER_SEAM$',
+            '^production.graphite.dependency=ABSENT$',
+            '^renderer.adoption=OPT_IN_ONLY$'
+          )) {
+            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
+              throw "Feature-flagged renderer contract missing: $pattern"
+            }
+          }
+
+      - name: Upload feature-flagged renderer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feature-flagged-renderer-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            compose/feature-flagged-renderer-probe/build/probe/feature-flagged-renderer.txt
+            compose/feature-flagged-renderer-probe/build/probe/direct-skia.png
+            compose/feature-flagged-renderer-probe/build/probe/experimental-offscreen-raster.png
+            compose/feature-flagged-renderer-probe/build/probe/feature-flagged-renderer-dependencies.txt
+          if-no-files-found: warn
+          retention-days: 90
+
   graphite-renderer-readiness-gate:
     needs:
       - windows-compose-1-13-skiko-0-153-recompile-smoke
@@ -1864,6 +2003,7 @@ jobs:
       - windows-graphite-paint-bridge-probe
       - windows-graphite-offscreen-composite-probe
       - windows-compose-offscreen-integration-probe
+      - windows-feature-flagged-renderer-probe
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -1904,6 +2044,12 @@ jobs:
           name: graphite-compose-offscreen-integration-skiko-0.153.0-${{ github.sha }}
           path: evidence/compose-offscreen
 
+      - name: Download feature-flagged renderer evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: feature-flagged-renderer-skiko-0.153.0-${{ github.sha }}
+          path: evidence/feature-flagged-renderer
+
       - name: Verify Graphite frontend readiness chain
         shell: bash
         run: |
@@ -1929,10 +2075,11 @@ jobs:
           bridge="$(find_one evidence/paint-bridge graphite-paint-bridge.txt)"
           offscreen="$(find_one evidence/offscreen-composite graphite-offscreen-composite.txt)"
           compose_offscreen="$(find_one evidence/compose-offscreen graphite-compose-offscreen-integration.txt)"
+          feature_flag="$(find_one evidence/feature-flagged-renderer feature-flagged-renderer.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  feature_flag=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$feature_flag"
 
           require_line() {
             local file="$1"
@@ -1989,13 +2136,23 @@ jobs:
           require_line "$compose_offscreen" "production.renderer.switch=NOT_IMPLEMENTED"
           require_line "$compose_offscreen" "renderer.adoption=NOT_STARTED"
 
+          require_line "$feature_flag" "result=FEATURE_FLAGGED_RENDERER_CAPABLE"
+          require_line "$feature_flag" "renderer.default=DIRECT_SKIA"
+          require_line "$feature_flag" "default.behavior.unchanged=PASS"
+          require_line "$feature_flag" "renderer.flagged=EXPERIMENTAL_OFFSCREEN_RASTER"
+          require_line "$feature_flag" "renderer.unknown_flag_fallback=DIRECT_SKIA"
+          require_line "$feature_flag" "comparison=PASS"
+          require_line "$feature_flag" "plotpanel.integration=FEATURE_FLAGGED_RENDERER_SEAM"
+          require_line "$feature_flag" "production.graphite.dependency=ABSENT"
+          require_line "$feature_flag" "renderer.adoption=OPT_IN_ONLY"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=GRAPHITE_COMPOSE_OFFSCREEN_INTEGRATION_CAPABLE
+          result=GRAPHITE_FEATURE_FLAGGED_RENDERER_SEAM_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2008,9 +2165,12 @@ jobs:
           offscreen.composite=PASS
           offscreen.transfer=CPU_READBACK
           compose.native_canvas.integration=PASS
-          production.renderer.switch=NOT_IMPLEMENTED
-          renderer.adoption=NOT_STARTED
-          next.required=FEATURE_FLAGGED_RENDERER_INTEGRATION
+          production.renderer.default=DIRECT_SKIA
+          production.renderer.experimental=EXPERIMENTAL_OFFSCREEN_RASTER
+          renderer.feature_flag=PASS
+          production.graphite.dependency=ABSENT
+          renderer.adoption=OPT_IN_ONLY
+          next.required=GRAPHITE_BACKEND_PROVIDER_INTEGRATION
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
