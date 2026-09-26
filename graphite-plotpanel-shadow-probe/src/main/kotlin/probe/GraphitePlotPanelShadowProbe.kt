@@ -394,7 +394,7 @@ fun main() {
         var initialBaseline: BackendSnapshot? = null
         var resizedObserved = false
 
-        application {
+        application(exitProcessOnExit = false) {
             val state = rememberWindowState(width = WINDOW_WIDTH.dp, height = WINDOW_HEIGHT.dp)
 
             Window(
