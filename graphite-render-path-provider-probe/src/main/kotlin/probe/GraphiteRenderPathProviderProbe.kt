@@ -98,6 +98,8 @@ private data class PreparedPlot(
     val registration: Registration
 )
 
+private class SyntheticProbeFailure(message: String) : RuntimeException(message)
+
 private class GraphiteBackendProvider(
     private val evidence: MutableMap<String, String>,
     private val graphitePng: File
@@ -114,6 +116,16 @@ private class GraphiteBackendProvider(
     private var renderTargetReuseCount = 0
     private var renderTargetResizeCount = 0
     private var renderTargetDisposeCount = 0
+    private var failNextRenderTargetCreate = false
+
+    fun injectRenderTargetCreateFailureOnce() {
+        check(!failNextRenderTargetCreate) { "Render-target create failure is already armed" }
+        failNextRenderTargetCreate = true
+    }
+
+    fun hasRenderTarget(): Boolean = renderTarget != null
+
+    fun currentRenderTargetLayoutName(): String? = renderTarget?.let { layoutName(it.layout) }
 
     @OptIn(ExperimentalSkikoApi::class)
     override fun paint(
@@ -151,7 +163,7 @@ private class GraphiteBackendProvider(
         if (paintCount == 2) {
             evidence["image.second_frame.layout_before_wrap"] = layoutName(target.layout)
         }
-        if (paintCount == SAME_SIZE_FRAME_COUNT + 1) {
+        if (renderTargetCreateCount == 2 && "image.resize_first_frame.layout_before_wrap" !in evidence) {
             evidence["image.resize_first_frame.layout_before_wrap"] = layoutName(target.layout)
         }
 
@@ -247,6 +259,13 @@ private class GraphiteBackendProvider(
             renderTargetResizeCount++
             evidence["render_target.resize"] = "PASS"
             evidence["render_target.resize_count"] = renderTargetResizeCount.toString()
+        }
+
+        if (failNextRenderTargetCreate) {
+            failNextRenderTargetCreate = false
+            evidence["failure.resize.create.injected"] = "PASS"
+            evidence["failure.resize.target_released"] = if (renderTarget == null) "PASS" else "FAIL"
+            throw SyntheticProbeFailure("synthetic-render-target-create-failure")
         }
 
         return createRenderImage(vk, width, height).also { created ->
