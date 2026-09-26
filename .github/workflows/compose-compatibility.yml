@@ -100,7 +100,7 @@ jobs:
           mkdir -p compose/lets-plot-compose/build/render-path-contract
           cat > compose/lets-plot-compose/build/render-path-contract/desktop-render-path.txt <<EOF
           schema=1
-          result=FEATURE_FLAGGED_RENDER_PATH_CAPABLE
+          result=GRAPHITE_BACKEND_PROVIDER_CAPABLE
           feature_flag.property=letsplot.compose.desktop.renderPath
           default.path=NATIVE_CANVAS
           offscreen.requested=SUPPORTED
@@ -1749,6 +1749,212 @@ jobs:
           retention-days: 90
 
 
+  windows-graphite-render-path-provider-probe:
+    needs:
+      - windows-graphite-render-path-provider-probe
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+      GRAPHITE_SKIKO_VERSION: '0.153.0'
+      GRAPHITE_LWJGL_VERSION: '3.4.3'
+
+    steps:
+      - name: Checkout render-path provider probe source
+        uses: actions/checkout@v4
+        with:
+          path: compose
+
+      - name: Download frontend Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download recompiled Compose Maven repository
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-compose-recompiled-maven-${{ github.sha }}
+          path: compose-recompiled
+
+      - name: Set up JDK 21 render-path provider runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up render-path provider Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Capture Windows Vulkan environment
+        shell: pwsh
+        run: |
+          $probeDir = "compose\graphite-render-path-provider-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          "os=$([System.Environment]::OSVersion.VersionString)" | Set-Content $report
+          "vulkan.loader.exists=$(Test-Path "$env:SystemRoot\System32\vulkan-1.dll")" | Add-Content $report
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, DriverVersion, AdapterRAM |
+            Format-List | Out-String | Add-Content $report
+          Get-Content $report
+
+      - name: Configure browser SwiftShader Vulkan ICD
+        shell: pwsh
+        run: |
+          $probeDir = "compose\graphite-render-path-provider-probe\build\probe"
+          $report = Join-Path $probeDir "windows-vulkan-environment.txt"
+          $roots = @(
+            "$env:ProgramFiles\Google\Chrome\Application",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application",
+            "$env:ProgramFiles\Microsoft\Edge\Application",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          $icd = $roots |
+            ForEach-Object { Get-ChildItem -Path $_ -Filter 'vk_swiftshader_icd.json' -File -Recurse -ErrorAction SilentlyContinue } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if ($null -ne $icd) {
+            $json = Get-Content $icd.FullName -Raw | ConvertFrom-Json
+            $resolvedLibrary = Join-Path $icd.Directory.FullName $json.ICD.library_path
+            if (!(Test-Path $resolvedLibrary)) {
+              throw "Browser SwiftShader ICD manifest found, but its library is missing: $resolvedLibrary"
+            }
+
+            $directDir = Join-Path $env:RUNNER_TEMP 'letsplot-swiftshader-vulkan-render-path-provider'
+            New-Item -ItemType Directory -Force -Path $directDir | Out-Null
+            $directDll = Join-Path $directDir 'vulkan-1.dll'
+            Copy-Item -Path $resolvedLibrary -Destination $directDll -Force
+
+            "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "VK_ICD_FILENAMES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_PROVIDER=browser-swiftshader-direct" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GRAPHITE_VULKAN_DIRECT_DLL=$directDll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+            "vulkan.provider=browser-swiftshader-direct" | Add-Content $report
+            "vulkan.icd=$($icd.FullName)" | Add-Content $report
+            "vulkan.icd.library=$resolvedLibrary" | Add-Content $report
+            "vulkan.direct.dll=$directDll" | Add-Content $report
+          } else {
+            "GRAPHITE_VULKAN_PROVIDER=system" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "vulkan.provider=system" | Add-Content $report
+            "vulkan.icd=not-found" | Add-Content $report
+          }
+
+          Get-Content $report
+
+      - name: Verify render-path provider dependency set
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+        run: |
+          $probeDir = "graphite-render-path-provider-probe\build\probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          $report = Join-Path $probeDir "graphite-render-path-provider-dependencies.txt"
+
+          .\gradlew.bat -p graphite-render-path-provider-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency lets-plot-compose-desktop --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report
+          .\gradlew.bat -p graphite-render-path-provider-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" dependencyInsight --dependency skiko-graphite --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $report -Append
+
+          foreach ($pattern in @(
+            "org\.jetbrains\.lets-plot:lets-plot-compose-desktop:3\.2\.3-SNAPSHOT",
+            "org\.jetbrains\.skiko:skiko-graphite-awt:0\.153\.0",
+            "org\.jetbrains\.skiko:skiko-graphite-awt-runtime-windows-x64:0\.153\.0"
+          )) {
+            if (!(Select-String -Path $report -Pattern $pattern -Quiet)) {
+              throw "Render-path provider dependency evidence missing: $pattern"
+            }
+          }
+
+      - name: Run Graphite render-path provider probe
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          GRAPHITE_PROBE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-render-path-provider-probe\build\probe
+        run: |
+          .\gradlew.bat -p graphite-render-path-provider-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
+            clean graphiteRenderPathProviderProbe --stacktrace
+
+      - name: Verify Graphite render-path provider contract
+        shell: pwsh
+        run: |
+          $result = "compose\graphite-render-path-provider-probe\build\probe\graphite-render-path-provider.txt"
+          $software = "compose\graphite-render-path-provider-probe\build\probe\direct-native-canvas.png"
+          $graphite = "compose\graphite-render-path-provider-probe\build\probe\graphite-provider-offscreen.png"
+          $composite = "compose\graphite-render-path-provider-probe\build\probe\graphite-provider-composited.png"
+
+          foreach ($file in @($result, $software, $graphite, $composite)) {
+            if (!(Test-Path $file)) { throw "Graphite render-path provider evidence missing: $file" }
+          }
+
+          Get-Content $result
+          foreach ($pattern in @(
+            '^result=GRAPHITE_BACKEND_PROVIDER_CAPABLE$',
+            '^feature_flag.property=letsplot\.compose\.desktop\.renderPath$',
+            '^feature_flag.value=graphite-offscreen$',
+            '^feature_flag.resolve=PASS$',
+            '^requested.path=OFFSCREEN_COMPOSITE$',
+            '^effective.path=OFFSCREEN_COMPOSITE$',
+            '^production.renderer.default=NATIVE_CANVAS$',
+            '^provider.binding=DesktopOffscreenRendererRegistry$',
+            '^provider.install=PASS$',
+            '^provider.invoked=PASS$',
+            '^provider.width=800$',
+            '^provider.height=550$',
+            '^graphite.context=CREATED$',
+            '^graphite.surface=CREATED$',
+            '^graphite.provider.paint=PASS$',
+            '^graphite.submit=PASS$',
+            '^graphite.snapshot=PASS$',
+            '^graphite.readback=PASS$',
+            '^provider.composite_to_target=PASS$',
+            '^provider.registration.dispose=PASS$',
+            '^provider.lifecycle=PER_PAINT_CONTEXT$',
+            '^comparison=PASS$',
+            '^provider.packaging=PROBE_ONLY$',
+            '^renderer.adoption=OPT_IN_ONLY$'
+          )) {
+            if (!(Select-String -Path $result -Pattern $pattern -Quiet)) {
+              throw "Graphite render-path provider contract missing: $pattern"
+            }
+          }
+
+      - name: Upload Graphite render-path provider evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-render-path-provider-skiko-${{ env.GRAPHITE_SKIKO_VERSION }}-${{ github.sha }}
+          path: |
+            compose/graphite-render-path-provider-probe/build/probe/graphite-render-path-provider.txt
+            compose/graphite-render-path-provider-probe/build/probe/direct-native-canvas.png
+            compose/graphite-render-path-provider-probe/build/probe/graphite-provider-offscreen.png
+            compose/graphite-render-path-provider-probe/build/probe/graphite-provider-composited.png
+            compose/graphite-render-path-provider-probe/build/probe/graphite-render-path-provider-dependencies.txt
+            compose/graphite-render-path-provider-probe/build/probe/windows-vulkan-environment.txt
+          if-no-files-found: warn
+          retention-days: 90
+
+
   windows-compose-offscreen-integration-probe:
     needs:
       - windows-graphite-offscreen-composite-probe
@@ -1898,6 +2104,7 @@ jobs:
       - windows-graphite-paint-bridge-probe
       - windows-graphite-offscreen-composite-probe
       - windows-compose-offscreen-integration-probe
+      - windows-graphite-render-path-provider-probe
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -1944,6 +2151,12 @@ jobs:
           name: desktop-render-path-contract-${{ github.sha }}
           path: evidence/render-path
 
+      - name: Download Graphite render-path provider evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-render-path-provider-skiko-0.153.0-${{ github.sha }}
+          path: evidence/graphite-provider
+
       - name: Verify Graphite frontend readiness chain
         shell: bash
         run: |
@@ -1970,10 +2183,11 @@ jobs:
           offscreen="$(find_one evidence/offscreen-composite graphite-offscreen-composite.txt)"
           compose_offscreen="$(find_one evidence/compose-offscreen graphite-compose-offscreen-integration.txt)"
           render_path="$(find_one evidence/render-path desktop-render-path.txt)"
+          graphite_provider="$(find_one evidence/graphite-provider graphite-render-path-provider.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider"
 
           require_line() {
             local file="$1"
@@ -2046,6 +2260,24 @@ jobs:
           require_line "$render_path" "renderer.adoption=NOT_STARTED"
           require_line "$render_path" "tests=PASS"
 
+          require_line "$graphite_provider" "result=GRAPHITE_BACKEND_PROVIDER_CAPABLE"
+          require_line "$graphite_provider" "feature_flag.value=graphite-offscreen"
+          require_line "$graphite_provider" "feature_flag.resolve=PASS"
+          require_line "$graphite_provider" "requested.path=OFFSCREEN_COMPOSITE"
+          require_line "$graphite_provider" "effective.path=OFFSCREEN_COMPOSITE"
+          require_line "$graphite_provider" "provider.install=PASS"
+          require_line "$graphite_provider" "provider.invoked=PASS"
+          require_line "$graphite_provider" "graphite.context=CREATED"
+          require_line "$graphite_provider" "graphite.surface=CREATED"
+          require_line "$graphite_provider" "graphite.submit=PASS"
+          require_line "$graphite_provider" "graphite.readback=PASS"
+          require_line "$graphite_provider" "provider.composite_to_target=PASS"
+          require_line "$graphite_provider" "provider.registration.dispose=PASS"
+          require_line "$graphite_provider" "provider.lifecycle=PER_PAINT_CONTEXT"
+          require_line "$graphite_provider" "comparison=PASS"
+          require_line "$graphite_provider" "provider.packaging=PROBE_ONLY"
+          require_line "$graphite_provider" "renderer.adoption=OPT_IN_ONLY"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
@@ -2073,9 +2305,13 @@ jobs:
           offscreen.provider.pixel_equivalence=PASS
           offscreen.provider.ownership=REGISTRATION_SAFE
           offscreen.provider.stale_dispose=SAFE
+          graphite.backend.provider=PASS
+          graphite.backend.feature_flag=graphite-offscreen
+          graphite.backend.lifecycle=PER_PAINT_CONTEXT
+          graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
-          renderer.adoption=NOT_STARTED
-          next.required=GRAPHITE_BACKEND_PROVIDER_INTEGRATION
+          renderer.adoption=OPT_IN_ONLY
+          next.required=PERSISTENT_GRAPHITE_CONTEXT_LIFECYCLE
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
