@@ -109,6 +109,8 @@ jobs:
           offscreen.provider.size_contract=PASS
           offscreen.provider.raster_reference=PASS
           offscreen.provider.pixel_equivalence=PASS
+          offscreen.provider.ownership=REGISTRATION_SAFE
+          offscreen.provider.stale_dispose=SAFE
           public.api.change=NONE
           production.graphite_dependency=ABSENT
           renderer.adoption=NOT_STARTED
@@ -2037,6 +2039,8 @@ jobs:
           require_line "$render_path" "offscreen.provider.size_contract=PASS"
           require_line "$render_path" "offscreen.provider.raster_reference=PASS"
           require_line "$render_path" "offscreen.provider.pixel_equivalence=PASS"
+          require_line "$render_path" "offscreen.provider.ownership=REGISTRATION_SAFE"
+          require_line "$render_path" "offscreen.provider.stale_dispose=SAFE"
           require_line "$render_path" "public.api.change=NONE"
           require_line "$render_path" "production.graphite_dependency=ABSENT"
           require_line "$render_path" "renderer.adoption=NOT_STARTED"
@@ -2067,6 +2071,8 @@ jobs:
           offscreen.provider.size_contract=PASS
           offscreen.provider.raster_reference=PASS
           offscreen.provider.pixel_equivalence=PASS
+          offscreen.provider.ownership=REGISTRATION_SAFE
+          offscreen.provider.stale_dispose=SAFE
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=NOT_STARTED
           next.required=GRAPHITE_BACKEND_PROVIDER_INTEGRATION
