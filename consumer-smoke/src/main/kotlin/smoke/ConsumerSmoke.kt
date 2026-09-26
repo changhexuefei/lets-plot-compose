@@ -154,11 +154,9 @@ fun main() {
                 ensureNoAsyncFailure(asyncFailure)
                 checkpoint("tooltip")
                 val beforeZoom = hoverImage
-                exerciseWheelZoom(robot, firstWindow)
-                delay(900)
-                val afterZoom = captureWindow(robot, firstWindow, outputDir.resolve("05-zoom.png"))
-                check(pixelDifferenceRatio(beforeZoom, afterZoom) > IMAGE_CHANGE_THRESHOLD) {
-                    "Ctrl+Shift wheel zoom did not visibly change the plot."
+                val afterZoom = exerciseWheelZoom(robot, firstWindow, beforeZoom)
+                check(ImageIO.write(afterZoom, "png", outputDir.resolve("05-zoom.png").toFile())) {
+                    "No PNG ImageIO writer available for zoom evidence."
                 }
                 ensureNoAsyncFailure(asyncFailure)
                 checkpoint("zoom")
@@ -403,12 +401,63 @@ private fun movePointerOutsidePlot(robot: Robot, window: AwtWindow) {
     )
 }
 
-private fun exerciseWheelZoom(robot: Robot, window: AwtWindow) {
-    movePointerToPlotCenter(robot, window)
+private suspend fun exerciseWheelZoom(
+    robot: Robot,
+    window: AwtWindow,
+    baseline: BufferedImage
+): BufferedImage {
+    val origin = window.locationOnScreen
+    val centerX = origin.x + window.width / 2
+    val centerY = origin.y + window.height / 2 + 18
+
+    // Keep this probe end-to-end: Robot still drives the real desktop input path.
+    // Compose 1.13 preview can occasionally observe the wheel event before the
+    // freshly pressed modifier state is reflected in pointer keyboard modifiers.
+    // Prime that state with a tiny real mouse move, then send several small wheel
+    // ticks and require an actual visible plot change before accepting the probe.
+    robot.mouseMove(centerX, centerY)
+    delay(150)
+
     robot.keyPress(KeyEvent.VK_CONTROL)
     robot.keyPress(KeyEvent.VK_SHIFT)
     try {
-        robot.mouseWheel(-4)
+        delay(180)
+        robot.mouseMove(centerX + 1, centerY)
+        delay(120)
+        robot.mouseMove(centerX, centerY)
+        delay(120)
+
+        var bestImage = baseline
+        var bestDifference = 0.0
+
+        repeat(4) { attempt ->
+            robot.mouseWheel(-1)
+            delay(450)
+
+            val candidate = screenCapture(robot, window)
+            val difference = pixelDifferenceRatio(baseline, candidate)
+            if (difference > bestDifference) {
+                bestDifference = difference
+                bestImage = candidate
+            }
+
+            println(
+                "SMOKE_ZOOM_ATTEMPT attempt=${attempt + 1} " +
+                    "difference=$difference threshold=$IMAGE_CHANGE_THRESHOLD"
+            )
+
+            if (difference > IMAGE_CHANGE_THRESHOLD) {
+                println(
+                    "SMOKE_ZOOM_HIT mode=robot attempt=${attempt + 1} difference=$difference"
+                )
+                return candidate
+            }
+        }
+
+        error(
+            "Ctrl+Shift wheel zoom did not visibly change the plot after 4 real wheel ticks. " +
+                "bestDifference=$bestDifference threshold=$IMAGE_CHANGE_THRESHOLD"
+        )
     } finally {
         robot.keyRelease(KeyEvent.VK_SHIFT)
         robot.keyRelease(KeyEvent.VK_CONTROL)
