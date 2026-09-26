@@ -63,6 +63,10 @@ import kotlin.math.abs
 
 private const val WIDTH = 800
 private const val HEIGHT = 550
+private const val RESIZED_WIDTH = 960
+private const val RESIZED_HEIGHT = 640
+private const val SAME_SIZE_FRAME_COUNT = 10
+private const val RESIZED_FRAME_COUNT = 10
 private const val LOGICAL_PLOT_WIDTH = 560
 private const val LOGICAL_PLOT_HEIGHT = 380
 private const val BRIDGE_DENSITY = 1.25
@@ -81,9 +85,12 @@ private data class VulkanObjects(
     val deviceName: String
 )
 
-private data class VulkanImage(
+private data class PersistentRenderTarget(
     val image: Long,
-    val memory: Long
+    val memory: Long,
+    val width: Int,
+    val height: Int,
+    var layout: Int = VK_IMAGE_LAYOUT_UNDEFINED
 )
 
 private data class PreparedPlot(
@@ -102,6 +109,11 @@ private class GraphiteBackendProvider(
     private var contextCreateCount = 0
     private var contextReuseCount = 0
     private var disposeCount = 0
+    private var renderTarget: PersistentRenderTarget? = null
+    private var renderTargetCreateCount = 0
+    private var renderTargetReuseCount = 0
+    private var renderTargetResizeCount = 0
+    private var renderTargetDisposeCount = 0
 
     @OptIn(ExperimentalSkikoApi::class)
     override fun paint(
@@ -113,9 +125,7 @@ private class GraphiteBackendProvider(
         paint: (SkiaContext2d) -> Unit
     ) {
         check(!disposed) { "Graphite provider is already disposed" }
-        check(width == WIDTH && height == HEIGHT) {
-            "Unexpected provider target size: ${width}x${height}"
-        }
+        check(width > 0 && height > 0) { "Invalid provider target size: ${width}x${height}" }
 
         paintCount++
         evidence["provider.invoked"] = "PASS"
@@ -132,10 +142,17 @@ private class GraphiteBackendProvider(
             evidence["graphite.context.reuse_count"] = contextReuseCount.toString()
         }
 
-        val target = createRenderImage(vk).also {
-            evidence["vulkan.image"] = "CREATED"
-            evidence["vulkan.image.memory"] = "BOUND"
-            evidence["render_target.lifecycle"] = "PER_PAINT"
+        val target = ensureRenderTarget(vk, width, height)
+        evidence["vulkan.image"] = "CREATED"
+        evidence["vulkan.image.memory"] = "BOUND"
+        evidence["render_target.lifecycle"] = "PERSISTENT_BY_SIZE"
+        evidence["render_target.current_size"] = "${target.width}x${target.height}"
+        evidence["image.layout.before_wrap"] = layoutName(target.layout)
+        if (paintCount == 2) {
+            evidence["image.second_frame.layout_before_wrap"] = layoutName(target.layout)
+        }
+        if (paintCount == SAME_SIZE_FRAME_COUNT + 1) {
+            evidence["image.resize_first_frame.layout_before_wrap"] = layoutName(target.layout)
         }
 
         val graphitePixels: IntArray
@@ -152,7 +169,7 @@ private class GraphiteBackendProvider(
                                 VulkanImageUsageFlags.TRANSFER_SRC or
                                 VulkanImageUsageFlags.TRANSFER_DST
                     ),
-                    imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    imageLayout = target.layout,
                     queueFamilyIndex = vk.queueFamilyIndex,
                     imagePtr = target.image
                 ).use { backendTexture ->
@@ -178,6 +195,8 @@ private class GraphiteBackendProvider(
                             context.insertRecording(recording)
                             context.submit(syncCpu = true)
                         }
+                        target.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                        evidence["image.layout.after_submit"] = layoutName(target.layout)
                         evidence["graphite.submit"] = "PASS"
 
                         surface.makeImageSnapshot().use { snapshot ->
@@ -185,18 +204,17 @@ private class GraphiteBackendProvider(
                             evidence["graphite.snapshot"] = "PASS"
                         }
 
-                        graphitePixels = readBackGraphiteImage(vk, target.image)
+                        graphitePixels = readBackGraphiteImage(vk, target)
                         if (paintCount == 1) {
-                            savePixels(graphitePixels, graphitePng)
+                            savePixels(graphitePixels, graphitePng, width, height)
                         }
+                        evidence["image.layout.after_readback"] = layoutName(target.layout)
                         evidence["graphite.readback"] = "PASS"
                     }
                 }
             }
         } finally {
             vkDeviceWaitIdle(vk.device)
-            vkDestroyImage(vk.device, target.image, null)
-            vkFreeMemory(vk.device, target.memory, null)
         }
 
         val buffered = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
@@ -206,8 +224,46 @@ private class GraphiteBackendProvider(
         }
 
         evidence["provider.composite_to_target"] = "PASS"
-        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT"
+        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT_AND_RENDER_TARGET"
         evidence["graphite.context.create_count"] = contextCreateCount.toString()
+        evidence["render_target.create_count"] = renderTargetCreateCount.toString()
+        evidence["render_target.reuse_count"] = renderTargetReuseCount.toString()
+        evidence["render_target.resize_count"] = renderTargetResizeCount.toString()
+        evidence["render_target.dispose_count"] = renderTargetDisposeCount.toString()
+    }
+
+    private fun ensureRenderTarget(vk: VulkanObjects, width: Int, height: Int): PersistentRenderTarget {
+        val existing = renderTarget
+        if (existing != null && existing.width == width && existing.height == height) {
+            renderTargetReuseCount++
+            evidence["render_target.reuse"] = "PASS"
+            evidence["render_target.reuse_count"] = renderTargetReuseCount.toString()
+            return existing
+        }
+
+        if (existing != null) {
+            vkDeviceWaitIdle(vk.device)
+            disposeRenderTarget(vk, existing)
+            renderTargetResizeCount++
+            evidence["render_target.resize"] = "PASS"
+            evidence["render_target.resize_count"] = renderTargetResizeCount.toString()
+        }
+
+        return createRenderImage(vk, width, height).also { created ->
+            renderTarget = created
+            renderTargetCreateCount++
+            evidence["render_target.create_count"] = renderTargetCreateCount.toString()
+        }
+    }
+
+    private fun disposeRenderTarget(vk: VulkanObjects, target: PersistentRenderTarget) {
+        vkDestroyImage(vk.device, target.image, null)
+        vkFreeMemory(vk.device, target.memory, null)
+        renderTargetDisposeCount++
+        evidence["render_target.dispose_count"] = renderTargetDisposeCount.toString()
+        if (renderTarget === target) {
+            renderTarget = null
+        }
     }
 
     @OptIn(ExperimentalSkikoApi::class)
@@ -257,12 +313,18 @@ private class GraphiteBackendProvider(
             graphiteContext?.close()
             graphiteContext = null
             evidence["graphite.context.dispose"] = "PASS"
+
+            if (vk != null) {
+                renderTarget?.let { disposeRenderTarget(vk, it) }
+                evidence["render_target.final_dispose"] = "PASS"
+            }
         } finally {
             if (vk != null) {
                 vkDestroyDevice(vk.device, null)
                 vkDestroyInstance(vk.instance, null)
                 evidence["vulkan.device.dispose"] = "PASS"
             }
+            renderTarget = null
             vulkan = null
         }
     }
@@ -279,6 +341,7 @@ fun main() {
     val graphitePng = outputDir.resolve("graphite-provider-offscreen.png")
     val compositedPng = outputDir.resolve("graphite-provider-composited.png")
     val secondFramePng = outputDir.resolve("graphite-provider-second-frame.png")
+    val resizedFramePng = outputDir.resolve("graphite-provider-resized-frame.png")
 
     var stage = "startup"
     var prepared: PreparedPlot? = null
@@ -335,8 +398,10 @@ fun main() {
         evidence["provider.install"] = "PASS"
 
         val previousFlag = System.getProperty(DESKTOP_RENDER_PATH_PROPERTY)
-        val compositedPixels: IntArray
-        val secondFramePixels: IntArray
+        lateinit var firstFramePixels: IntArray
+        lateinit var secondFramePixels: IntArray
+        lateinit var resizedFirstFramePixels: IntArray
+        lateinit var resizedLastFramePixels: IntArray
         try {
             System.setProperty(DESKTOP_RENDER_PATH_PROPERTY, "graphite-offscreen")
             val resolved = resolveDesktopRenderPath()
@@ -345,24 +410,51 @@ fun main() {
             }
             evidence["feature_flag.resolve"] = "PASS"
 
-            stage = "provider-render-first-frame"
-            compositedPixels = renderViaSelectedProvider(prepared.drawable)
-            evidence["effective.path"] = DesktopRenderPath.OFFSCREEN_COMPOSITE.name
-            evidence["plot.drawable.paint"] = "PASS"
-            savePixels(compositedPixels, compositedPng)
-
-            stage = "provider-render-second-frame"
-            secondFramePixels = renderViaSelectedProvider(prepared.drawable)
-            savePixels(secondFramePixels, secondFramePng)
-
-            val frameDifference = pixelDifferenceRatio(compositedPixels, secondFramePixels)
-            evidence["multi_frame.pixel_difference_ratio"] = frameDifference.toString()
-            check(frameDifference <= 0.001) {
-                "Persistent Graphite context produced inconsistent consecutive frames: difference=$frameDifference"
+            stage = "provider-render-same-size"
+            repeat(SAME_SIZE_FRAME_COUNT) { index ->
+                val pixels = renderViaSelectedProvider(prepared.drawable, WIDTH, HEIGHT)
+                when (index) {
+                    0 -> {
+                        firstFramePixels = pixels
+                        evidence["effective.path"] = DesktopRenderPath.OFFSCREEN_COMPOSITE.name
+                        evidence["plot.drawable.paint"] = "PASS"
+                        savePixels(pixels, compositedPng, WIDTH, HEIGHT)
+                    }
+                    1 -> {
+                        secondFramePixels = pixels
+                        savePixels(pixels, secondFramePng, WIDTH, HEIGHT)
+                    }
+                }
             }
-            evidence["multi_frame.consistency"] = "PASS"
-            evidence["multi_frame.count"] = "2"
+
+            val sameSizeDifference = pixelDifferenceRatio(firstFramePixels, secondFramePixels)
+            evidence["same_size.pixel_difference_ratio"] = sameSizeDifference.toString()
+            check(sameSizeDifference <= 0.001) {
+                "Persistent Graphite render target produced inconsistent same-size frames: difference=$sameSizeDifference"
+            }
+            evidence["same_size.consistency"] = "PASS"
+
+            stage = "provider-render-resize"
+            repeat(RESIZED_FRAME_COUNT) { index ->
+                val pixels = renderViaSelectedProvider(prepared.drawable, RESIZED_WIDTH, RESIZED_HEIGHT)
+                if (index == 0) {
+                    resizedFirstFramePixels = pixels
+                    savePixels(pixels, resizedFramePng, RESIZED_WIDTH, RESIZED_HEIGHT)
+                }
+                if (index == RESIZED_FRAME_COUNT - 1) {
+                    resizedLastFramePixels = pixels
+                }
+            }
+
+            val resizedDifference = pixelDifferenceRatio(resizedFirstFramePixels, resizedLastFramePixels)
+            evidence["resized.pixel_difference_ratio"] = resizedDifference.toString()
+            check(resizedDifference <= 0.001) {
+                "Persistent resized Graphite target produced inconsistent frames: difference=$resizedDifference"
+            }
+            evidence["resized.consistency"] = "PASS"
+            evidence["multi_frame.count"] = (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT).toString()
             evidence["graphite.context.reuse"] = "PASS"
+            evidence["image.layout.tracking"] = "PASS"
         } finally {
             if (previousFlag == null) {
                 System.clearProperty(DESKTOP_RENDER_PATH_PROPERTY)
@@ -377,28 +469,53 @@ fun main() {
             "Graphite provider registration did not release ownership"
         }
         evidence["provider.registration.dispose"] = "PASS"
-        check(evidence["provider.paint_count"] == "2") {
-            "Expected two provider paints, got ${evidence["provider.paint_count"]}"
+        check(evidence["provider.paint_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT).toString()) {
+            "Unexpected provider paint count: ${evidence["provider.paint_count"]}"
         }
         check(evidence["graphite.context.create_count"] == "1") {
             "Persistent Graphite context was recreated: ${evidence["graphite.context.create_count"]}"
         }
-        check(evidence["graphite.context.reuse_count"] == "1") {
+        check(evidence["graphite.context.reuse_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT - 1).toString()) {
             "Persistent Graphite context reuse count is unexpected: ${evidence["graphite.context.reuse_count"]}"
+        }
+        check(evidence["render_target.create_count"] == "2") {
+            "Persistent render target create count is unexpected: ${evidence["render_target.create_count"]}"
+        }
+        check(evidence["render_target.reuse_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT - 2).toString()) {
+            "Persistent render target reuse count is unexpected: ${evidence["render_target.reuse_count"]}"
+        }
+        check(evidence["render_target.resize_count"] == "1") {
+            "Persistent render target resize count is unexpected: ${evidence["render_target.resize_count"]}"
+        }
+        check(evidence["render_target.dispose_count"] == "2") {
+            "Persistent render target dispose count is unexpected: ${evidence["render_target.dispose_count"]}"
         }
         check(evidence["provider.dispose_count"] == "1") {
             "Provider dispose count is unexpected: ${evidence["provider.dispose_count"]}"
         }
+        check(evidence["render_target.resize"] == "PASS")
+        check(evidence["render_target.final_dispose"] == "PASS")
+        check(evidence["image.second_frame.layout_before_wrap"] == "TRANSFER_SRC_OPTIMAL") {
+            "Second frame did not reuse the tracked readback layout: ${evidence["image.second_frame.layout_before_wrap"]}"
+        }
+        check(evidence["image.resize_first_frame.layout_before_wrap"] == "UNDEFINED") {
+            "Resized render target did not start from UNDEFINED layout: ${evidence["image.resize_first_frame.layout_before_wrap"]}"
+        }
+        check(evidence["image.layout.after_readback"] == "TRANSFER_SRC_OPTIMAL")
+        evidence["image.layout.reuse_transition"] = "PASS"
+        evidence["image.layout.resize_reset"] = "PASS"
         check(evidence["graphite.context.dispose"] == "PASS")
         check(evidence["vulkan.device.dispose"] == "PASS")
-        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT"
+        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT_AND_RENDER_TARGET"
         evidence["persistent.context.lifecycle"] = "PASS"
+        evidence["persistent.render_target.lifecycle"] = "PASS"
 
         stage = "composite-structure"
-        evidence.putAll(assertPlotStructure("provider", compositedPixels))
+        evidence.putAll(assertPlotStructure("provider", firstFramePixels, WIDTH, HEIGHT))
+        evidence.putAll(assertPlotStructure("provider_resized", resizedFirstFramePixels, RESIZED_WIDTH, RESIZED_HEIGHT))
 
         stage = "comparison"
-        val difference = pixelDifferenceRatio(directPixels, compositedPixels)
+        val difference = pixelDifferenceRatio(directPixels, firstFramePixels)
         evidence["comparison.pixel_difference_ratio"] = difference.toString()
         evidence["comparison.max_allowed_ratio"] = MAX_PIXEL_DIFFERENCE_RATIO.toString()
         check(difference <= MAX_PIXEL_DIFFERENCE_RATIO) {
@@ -407,11 +524,11 @@ fun main() {
         }
         evidence["comparison"] = "PASS"
 
-        evidence["result"] = "PERSISTENT_GRAPHITE_CONTEXT_CAPABLE"
+        evidence["result"] = "PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE"
         evidence["failure.stage"] = "none"
         writeEvidence(resultFile, evidence)
 
-        println("PERSISTENT_GRAPHITE_CONTEXT_RESULT PASS")
+        println("PERSISTENT_GRAPHITE_RENDER_TARGET_RESULT PASS")
         evidence.forEach { (key, value) -> println("$key=$value") }
     } catch (t: Throwable) {
         evidence["result"] = "FAIL"
@@ -419,21 +536,25 @@ fun main() {
         evidence["failure.type"] = t::class.qualifiedName ?: t::class.simpleName.orEmpty()
         evidence["failure.message"] = sanitize(t.message ?: "no message")
         writeEvidence(resultFile, evidence)
-        println("PERSISTENT_GRAPHITE_CONTEXT_RESULT FAIL stage=$stage")
+        println("PERSISTENT_GRAPHITE_RENDER_TARGET_RESULT FAIL stage=$stage")
         throw t
     } finally {
         prepared?.registration?.dispose()
     }
 }
 
-private fun renderViaSelectedProvider(drawable: PlotCanvasDrawable): IntArray {
-    Surface.makeRasterN32Premul(WIDTH, HEIGHT).use { surface ->
+private fun renderViaSelectedProvider(
+    drawable: PlotCanvasDrawable,
+    width: Int,
+    height: Int
+): IntArray {
+    Surface.makeRasterN32Premul(width, height).use { surface ->
         surface.canvas.clear(WHITE)
 
         val effective = paintDesktopPlot(
             canvas = surface.canvas,
-            width = WIDTH,
-            height = HEIGHT,
+            width = width,
+            height = height,
             density = BRIDGE_DENSITY,
             plotPosition = DoubleVector(PLOT_X, PLOT_Y)
         ) { context ->
@@ -446,8 +567,8 @@ private fun renderViaSelectedProvider(drawable: PlotCanvasDrawable): IntArray {
 
         surface.makeImageSnapshot().use { image ->
             Bitmap.makeFromImage(image).use { bitmap ->
-                return IntArray(WIDTH * HEIGHT) { index ->
-                    bitmap.getColor(index % WIDTH, index / WIDTH)
+                return IntArray(width * height) { index ->
+                    bitmap.getColor(index % width, index / width)
                 }
             }
         }
@@ -570,7 +691,12 @@ private fun paintPlotDrawable(drawable: PlotCanvasDrawable, surface: Surface) {
     }
 }
 
-private fun assertPlotStructure(prefix: String, pixels: IntArray): Map<String, String> {
+private fun assertPlotStructure(
+    prefix: String,
+    pixels: IntArray,
+    width: Int = WIDTH,
+    height: Int = HEIGHT
+): Map<String, String> {
     val white = pixels.count { color ->
         channel(color, 16) >= 235 && channel(color, 8) >= 235 && channel(color, 0) >= 235
     }
@@ -583,11 +709,11 @@ private fun assertPlotStructure(prefix: String, pixels: IntArray): Map<String, S
     val dark = pixels.count { color ->
         channel(color, 16) <= 130 && channel(color, 8) <= 130 && channel(color, 0) <= 130
     }
-    val plotInk = countInkInRect(pixels, 24, 24, WIDTH - 24, HEIGHT - 24)
+    val plotInk = countInkInRect(pixels, width, 24, 24, width - 24, height - 24)
     val sampledColors = linkedSetOf<Int>()
-    for (y in 0 until HEIGHT step 8) {
-        for (x in 0 until WIDTH step 8) {
-            sampledColors += pixels[y * WIDTH + x] and 0x00FFFFFF
+    for (y in 0 until height step 8) {
+        for (x in 0 until width step 8) {
+            sampledColors += pixels[y * width + x] and 0x00FFFFFF
         }
     }
 
@@ -609,11 +735,18 @@ private fun assertPlotStructure(prefix: String, pixels: IntArray): Map<String, S
     )
 }
 
-private fun countInkInRect(pixels: IntArray, left: Int, top: Int, right: Int, bottom: Int): Int {
+private fun countInkInRect(
+    pixels: IntArray,
+    width: Int,
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int
+): Int {
     var count = 0
     for (y in top until bottom) {
         for (x in left until right) {
-            val color = pixels[y * WIDTH + x]
+            val color = pixels[y * width + x]
             val r = channel(color, 16)
             val g = channel(color, 8)
             val b = channel(color, 0)
@@ -640,9 +773,17 @@ private fun pixelDifferenceRatio(left: IntArray, right: IntArray): Double {
 
 private fun channel(color: Int, shift: Int): Int = (color ushr shift) and 0xFF
 
-private fun savePixels(pixels: IntArray, file: File) {
-    val image = BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_ARGB)
-    image.setRGB(0, 0, WIDTH, HEIGHT, pixels, 0, WIDTH)
+private fun savePixels(
+    pixels: IntArray,
+    file: File,
+    width: Int = WIDTH,
+    height: Int = HEIGHT
+) {
+    check(pixels.size == width * height) {
+        "Pixel buffer size ${pixels.size} does not match ${width}x${height}"
+    }
+    val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+    image.setRGB(0, 0, width, height, pixels, 0, width)
     check(ImageIO.write(image, "png", file)) { "Failed to write PNG: ${file.absolutePath}" }
 }
 
@@ -711,7 +852,11 @@ private fun createVulkanObjects(): VulkanObjects {
     }
 }
 
-private fun createRenderImage(vk: VulkanObjects): VulkanImage {
+private fun createRenderImage(
+    vk: VulkanObjects,
+    width: Int,
+    height: Int
+): PersistentRenderTarget {
     MemoryStack.stackPush().use { stack ->
         val imageCreateInfo = VkImageCreateInfo.calloc(stack)
             .sType(VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO)
@@ -729,7 +874,7 @@ private fun createRenderImage(vk: VulkanObjects): VulkanImage {
             )
             .sharingMode(VK_SHARING_MODE_EXCLUSIVE)
             .initialLayout(VK_IMAGE_LAYOUT_UNDEFINED)
-        imageCreateInfo.extent().width(WIDTH).height(HEIGHT).depth(1)
+        imageCreateInfo.extent().width(width).height(height).depth(1)
 
         val imagePtr = stack.mallocLong(1)
         checkVk(vkCreateImage(vk.device, imageCreateInfo, null, imagePtr), "vkCreateImage")
@@ -739,7 +884,11 @@ private fun createRenderImage(vk: VulkanObjects): VulkanImage {
             vkGetImageMemoryRequirements(vk.device, image, requirements)
             val memoryProperties = VkPhysicalDeviceMemoryProperties.calloc(stack)
             vkGetPhysicalDeviceMemoryProperties(vk.physicalDevice, memoryProperties)
-            val memoryTypeIndex = findMemoryType(requirements.memoryTypeBits(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryProperties)
+            val memoryTypeIndex = findMemoryType(
+                requirements.memoryTypeBits(),
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                memoryProperties
+            )
             val allocationInfo = VkMemoryAllocateInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO)
                 .allocationSize(requirements.size())
@@ -749,7 +898,12 @@ private fun createRenderImage(vk: VulkanObjects): VulkanImage {
             val memory = memoryPtr[0]
             try {
                 checkVk(vkBindImageMemory(vk.device, image, memory, 0), "vkBindImageMemory")
-                return VulkanImage(image, memory)
+                return PersistentRenderTarget(
+                    image = image,
+                    memory = memory,
+                    width = width,
+                    height = height
+                )
             } catch (t: Throwable) {
                 vkFreeMemory(vk.device, memory, null)
                 throw t
@@ -761,8 +915,14 @@ private fun createRenderImage(vk: VulkanObjects): VulkanImage {
     }
 }
 
-private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
-    val byteSize = (WIDTH * HEIGHT * 4).toLong()
+private fun readBackGraphiteImage(
+    vk: VulkanObjects,
+    target: PersistentRenderTarget
+): IntArray {
+    val width = target.width
+    val height = target.height
+    val byteSize = (width * height * 4).toLong()
+
     MemoryStack.stackPush().use { stack ->
         val bufferInfo = VkBufferCreateInfo.calloc(stack)
             .sType(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO)
@@ -800,6 +960,7 @@ private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
             val poolPtr = stack.mallocLong(1)
             checkVk(vkCreateCommandPool(vk.device, poolInfo, null, poolPtr), "vkCreateCommandPool")
             commandPool = poolPtr[0]
+
             val allocInfo = VkCommandBufferAllocateInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO)
                 .commandPool(commandPool)
@@ -818,22 +979,26 @@ private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
                 .sType(VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER)
                 .srcAccessMask(VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)
                 .dstAccessMask(VK_ACCESS_TRANSFER_READ_BIT)
-                .oldLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+                .oldLayout(target.layout)
                 .newLayout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
                 .srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                 .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .image(image)
+                .image(target.image)
             barrier[0].subresourceRange()
                 .aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
                 .baseMipLevel(0)
                 .levelCount(1)
                 .baseArrayLayer(0)
                 .layerCount(1)
+
             vkCmdPipelineBarrier(
                 commandBuffer,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
-                0, null, null, barrier
+                0,
+                null,
+                null,
+                barrier
             )
 
             val copy = VkBufferImageCopy.calloc(1, stack)
@@ -844,20 +1009,27 @@ private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
                 .baseArrayLayer(0)
                 .layerCount(1)
             copy[0].imageOffset().set(0, 0, 0)
-            copy[0].imageExtent().set(WIDTH, HEIGHT, 1)
-            vkCmdCopyImageToBuffer(commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, copy)
+            copy[0].imageExtent().set(width, height, 1)
+            vkCmdCopyImageToBuffer(
+                commandBuffer,
+                target.image,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                stagingBuffer,
+                copy
+            )
             checkVk(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer")
             val submitInfo = VkSubmitInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_SUBMIT_INFO)
                 .pCommandBuffers(stack.pointers(commandBuffer.address()))
             checkVk(vkQueueSubmit(vk.queue, submitInfo, VK_NULL_HANDLE), "vkQueueSubmit(readback)")
             checkVk(vkQueueWaitIdle(vk.queue), "vkQueueWaitIdle(readback)")
+            target.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
 
             val mappedPtr = stack.mallocPointer(1)
             checkVk(vkMapMemory(vk.device, stagingMemory, 0, byteSize, 0, mappedPtr), "vkMapMemory")
             try {
                 val bytes = MemoryUtil.memByteBuffer(mappedPtr[0], byteSize.toInt())
-                val pixels = IntArray(WIDTH * HEIGHT)
+                val pixels = IntArray(width * height)
                 for (i in pixels.indices) {
                     val offset = i * 4
                     val b = bytes.get(offset).toInt() and 0xFF
@@ -875,6 +1047,15 @@ private fun readBackGraphiteImage(vk: VulkanObjects, image: Long): IntArray {
             if (stagingMemory != 0L) vkFreeMemory(vk.device, stagingMemory, null)
             vkDestroyBuffer(vk.device, stagingBuffer, null)
         }
+    }
+}
+
+private fun layoutName(layout: Int): String {
+    return when (layout) {
+        VK_IMAGE_LAYOUT_UNDEFINED -> "UNDEFINED"
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL -> "COLOR_ATTACHMENT_OPTIMAL"
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL -> "TRANSFER_SRC_OPTIMAL"
+        else -> "0x" + layout.toString(16)
     }
 }
 

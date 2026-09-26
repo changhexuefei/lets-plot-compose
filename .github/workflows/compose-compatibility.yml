@@ -1904,14 +1904,15 @@ jobs:
           $graphite = "compose\graphite-render-path-provider-probe\build\probe\graphite-provider-offscreen.png"
           $composite = "compose\graphite-render-path-provider-probe\build\probe\graphite-provider-composited.png"
           $secondFrame = "compose\graphite-render-path-provider-probe\build\probe\graphite-provider-second-frame.png"
+          $resizedFrame = "compose\graphite-render-path-provider-probe\build\probe\graphite-provider-resized-frame.png"
 
-          foreach ($file in @($result, $software, $graphite, $composite, $secondFrame)) {
+          foreach ($file in @($result, $software, $graphite, $composite, $secondFrame, $resizedFrame)) {
             if (!(Test-Path $file)) { throw "Graphite render-path provider evidence missing: $file" }
           }
 
           Get-Content $result
           foreach ($pattern in @(
-            '^result=PERSISTENT_GRAPHITE_CONTEXT_CAPABLE$',
+            '^result=PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE$',
             '^feature_flag.property=letsplot\.compose\.desktop\.renderPath$',
             '^feature_flag.value=graphite-offscreen$',
             '^feature_flag.resolve=PASS$',
@@ -1921,12 +1922,12 @@ jobs:
             '^provider.binding=DesktopOffscreenRendererRegistry$',
             '^provider.install=PASS$',
             '^provider.invoked=PASS$',
-            '^provider.width=800$',
-            '^provider.height=550$',
+            '^provider.width=960$',
+            '^provider.height=640$',
             '^graphite.context=CREATED$',
             '^graphite.context.create_count=1$',
             '^graphite.context.reuse=PASS$',
-            '^graphite.context.reuse_count=1$',
+            '^graphite.context.reuse_count=19$',
             '^graphite.surface=CREATED$',
             '^graphite.provider.paint=PASS$',
             '^graphite.submit=PASS$',
@@ -1934,15 +1935,29 @@ jobs:
             '^graphite.readback=PASS$',
             '^provider.composite_to_target=PASS$',
             '^provider.registration.dispose=PASS$',
-            '^provider.lifecycle=PERSISTENT_CONTEXT$',
-            '^provider.paint_count=2$',
-            '^multi_frame.count=2$',
-            '^multi_frame.consistency=PASS$',
-            '^render_target.lifecycle=PER_PAINT$',
+            '^provider.lifecycle=PERSISTENT_CONTEXT_AND_RENDER_TARGET$',
+            '^provider.paint_count=20$',
+            '^multi_frame.count=20$',
+            '^same_size.consistency=PASS$',
+            '^resized.consistency=PASS$',
+            '^render_target.lifecycle=PERSISTENT_BY_SIZE$',
+            '^render_target.create_count=2$',
+            '^render_target.reuse=PASS$',
+            '^render_target.reuse_count=18$',
+            '^render_target.resize=PASS$',
+            '^render_target.resize_count=1$',
+            '^render_target.dispose_count=2$',
+            '^render_target.final_dispose=PASS$',
+            '^image.second_frame.layout_before_wrap=TRANSFER_SRC_OPTIMAL$',
+            '^image.resize_first_frame.layout_before_wrap=UNDEFINED$',
+            '^image.layout.reuse_transition=PASS$',
+            '^image.layout.resize_reset=PASS$',
+            '^image.layout.tracking=PASS$',
             '^provider.dispose_count=1$',
             '^graphite.context.dispose=PASS$',
             '^vulkan.device.dispose=PASS$',
             '^persistent.context.lifecycle=PASS$',
+            '^persistent.render_target.lifecycle=PASS$',
             '^comparison=PASS$',
             '^provider.packaging=PROBE_ONLY$',
             '^renderer.adoption=OPT_IN_ONLY$'
@@ -1963,6 +1978,7 @@ jobs:
             compose/graphite-render-path-provider-probe/build/probe/graphite-provider-offscreen.png
             compose/graphite-render-path-provider-probe/build/probe/graphite-provider-composited.png
             compose/graphite-render-path-provider-probe/build/probe/graphite-provider-second-frame.png
+            compose/graphite-render-path-provider-probe/build/probe/graphite-provider-resized-frame.png
             compose/graphite-render-path-provider-probe/build/probe/graphite-render-path-provider-dependencies.txt
             compose/graphite-render-path-provider-probe/build/probe/windows-vulkan-environment.txt
           if-no-files-found: warn
@@ -2275,7 +2291,7 @@ jobs:
           require_line "$render_path" "renderer.adoption=NOT_STARTED"
           require_line "$render_path" "tests=PASS"
 
-          require_line "$graphite_provider" "result=PERSISTENT_GRAPHITE_CONTEXT_CAPABLE"
+          require_line "$graphite_provider" "result=PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE"
           require_line "$graphite_provider" "feature_flag.value=graphite-offscreen"
           require_line "$graphite_provider" "feature_flag.resolve=PASS"
           require_line "$graphite_provider" "requested.path=OFFSCREEN_COMPOSITE"
@@ -2285,21 +2301,35 @@ jobs:
           require_line "$graphite_provider" "graphite.context=CREATED"
           require_line "$graphite_provider" "graphite.context.create_count=1"
           require_line "$graphite_provider" "graphite.context.reuse=PASS"
-          require_line "$graphite_provider" "graphite.context.reuse_count=1"
+          require_line "$graphite_provider" "graphite.context.reuse_count=19"
           require_line "$graphite_provider" "graphite.surface=CREATED"
           require_line "$graphite_provider" "graphite.submit=PASS"
           require_line "$graphite_provider" "graphite.readback=PASS"
           require_line "$graphite_provider" "provider.composite_to_target=PASS"
           require_line "$graphite_provider" "provider.registration.dispose=PASS"
-          require_line "$graphite_provider" "provider.lifecycle=PERSISTENT_CONTEXT"
-          require_line "$graphite_provider" "provider.paint_count=2"
-          require_line "$graphite_provider" "multi_frame.count=2"
-          require_line "$graphite_provider" "multi_frame.consistency=PASS"
-          require_line "$graphite_provider" "render_target.lifecycle=PER_PAINT"
+          require_line "$graphite_provider" "provider.lifecycle=PERSISTENT_CONTEXT_AND_RENDER_TARGET"
+          require_line "$graphite_provider" "provider.paint_count=20"
+          require_line "$graphite_provider" "multi_frame.count=20"
+          require_line "$graphite_provider" "same_size.consistency=PASS"
+          require_line "$graphite_provider" "resized.consistency=PASS"
+          require_line "$graphite_provider" "render_target.lifecycle=PERSISTENT_BY_SIZE"
+          require_line "$graphite_provider" "render_target.create_count=2"
+          require_line "$graphite_provider" "render_target.reuse=PASS"
+          require_line "$graphite_provider" "render_target.reuse_count=18"
+          require_line "$graphite_provider" "render_target.resize=PASS"
+          require_line "$graphite_provider" "render_target.resize_count=1"
+          require_line "$graphite_provider" "render_target.dispose_count=2"
+          require_line "$graphite_provider" "render_target.final_dispose=PASS"
+          require_line "$graphite_provider" "image.second_frame.layout_before_wrap=TRANSFER_SRC_OPTIMAL"
+          require_line "$graphite_provider" "image.resize_first_frame.layout_before_wrap=UNDEFINED"
+          require_line "$graphite_provider" "image.layout.reuse_transition=PASS"
+          require_line "$graphite_provider" "image.layout.resize_reset=PASS"
+          require_line "$graphite_provider" "image.layout.tracking=PASS"
           require_line "$graphite_provider" "provider.dispose_count=1"
           require_line "$graphite_provider" "graphite.context.dispose=PASS"
           require_line "$graphite_provider" "vulkan.device.dispose=PASS"
           require_line "$graphite_provider" "persistent.context.lifecycle=PASS"
+          require_line "$graphite_provider" "persistent.render_target.lifecycle=PASS"
           require_line "$graphite_provider" "comparison=PASS"
           require_line "$graphite_provider" "provider.packaging=PROBE_ONLY"
           require_line "$graphite_provider" "renderer.adoption=OPT_IN_ONLY"
@@ -2310,7 +2340,7 @@ jobs:
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=PERSISTENT_GRAPHITE_CONTEXT_CAPABLE
+          result=PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2334,16 +2364,20 @@ jobs:
           offscreen.provider.dispose=REGISTRATION_OWNED
           graphite.backend.provider=PASS
           graphite.backend.feature_flag=graphite-offscreen
-          graphite.backend.lifecycle=PERSISTENT_CONTEXT
+          graphite.backend.lifecycle=PERSISTENT_CONTEXT_AND_RENDER_TARGET
           graphite.backend.context_create_count=1
           graphite.backend.context_reuse=PASS
-          graphite.backend.multi_frame=PASS
-          graphite.backend.render_target=PER_PAINT
+          graphite.backend.multi_frame=20_FRAME_RESIZE_PASS
+          graphite.backend.render_target=PERSISTENT_BY_SIZE
+          graphite.backend.render_target_create_count=2
+          graphite.backend.render_target_reuse_count=18
+          graphite.backend.render_target_resize=PASS
+          graphite.backend.image_layout_tracking=PASS
           graphite.backend.dispose=PASS
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=OPT_IN_ONLY
-          next.required=PERSISTENT_GRAPHITE_RENDER_TARGET_LIFECYCLE
+          next.required=GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
