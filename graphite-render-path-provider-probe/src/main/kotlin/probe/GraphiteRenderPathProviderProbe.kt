@@ -95,6 +95,14 @@ private class GraphiteBackendProvider(
     private val evidence: MutableMap<String, String>,
     private val graphitePng: File
 ) : DesktopOffscreenRenderer {
+    private var vulkan: VulkanObjects? = null
+    private var graphiteContext: GraphiteContext? = null
+    private var disposed = false
+    private var paintCount = 0
+    private var contextCreateCount = 0
+    private var contextReuseCount = 0
+    private var disposeCount = 0
+
     @OptIn(ExperimentalSkikoApi::class)
     override fun paint(
         targetCanvas: org.jetbrains.skia.Canvas,
@@ -104,90 +112,84 @@ private class GraphiteBackendProvider(
         plotPosition: DoubleVector,
         paint: (SkiaContext2d) -> Unit
     ) {
+        check(!disposed) { "Graphite provider is already disposed" }
         check(width == WIDTH && height == HEIGHT) {
             "Unexpected provider target size: ${width}x${height}"
         }
 
+        paintCount++
         evidence["provider.invoked"] = "PASS"
+        evidence["provider.paint_count"] = paintCount.toString()
         evidence["provider.width"] = width.toString()
         evidence["provider.height"] = height.toString()
         evidence["provider.density"] = density.toString()
         evidence["provider.plot_position"] = "${plotPosition.x},${plotPosition.y}"
 
-        val vk = createVulkanObjects()
-        evidence["vulkan.device.name"] = vk.deviceName
+        val (vk, context) = ensurePersistentContext()
+        if (paintCount > 1) {
+            contextReuseCount++
+            evidence["graphite.context.reuse"] = "PASS"
+            evidence["graphite.context.reuse_count"] = contextReuseCount.toString()
+        }
 
-        val target = try {
-            createRenderImage(vk).also {
-                evidence["vulkan.image"] = "CREATED"
-                evidence["vulkan.image.memory"] = "BOUND"
-            }
-        } catch (t: Throwable) {
-            vkDestroyDevice(vk.device, null)
-            vkDestroyInstance(vk.instance, null)
-            throw t
+        val target = createRenderImage(vk).also {
+            evidence["vulkan.image"] = "CREATED"
+            evidence["vulkan.image.memory"] = "BOUND"
+            evidence["render_target.lifecycle"] = "PER_PAINT"
         }
 
         val graphitePixels: IntArray
         try {
-            GraphiteContext.makeVulkan(
-                instancePtr = vk.instance.address(),
-                physicalDevicePtr = vk.physicalDevice.address(),
-                devicePtr = vk.device.address(),
-                queuePtr = vk.queue.address(),
-                graphicsQueueIndex = vk.queueFamilyIndex,
-                maxApiVersion = VK_API_VERSION_1_1
-            ).use { context ->
-                evidence["graphite.context"] = "CREATED"
-                context.makeRecorder().use { recorder ->
-                    BackendTexture.makeVulkan(
-                        width = width,
-                        height = height,
-                        textureInfo = VulkanTextureInfo(
-                            format = VulkanFormat(VK_FORMAT_B8G8R8A8_UNORM),
-                            imageUsageFlags =
-                                VulkanImageUsageFlags.COLOR_ATTACHMENT or
-                                    VulkanImageUsageFlags.INPUT_ATTACHMENT or
-                                    VulkanImageUsageFlags.TRANSFER_SRC or
-                                    VulkanImageUsageFlags.TRANSFER_DST
-                        ),
-                        imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                        queueFamilyIndex = vk.queueFamilyIndex,
-                        imagePtr = target.image
-                    ).use { backendTexture ->
-                        val surface = Surface.wrapBackendTexture(
-                            recorder = recorder,
-                            backendTexture = backendTexture,
-                            colorSpace = null
-                        ) ?: error("Graphite Surface.wrapBackendTexture returned null")
+            context.makeRecorder().use { recorder ->
+                BackendTexture.makeVulkan(
+                    width = width,
+                    height = height,
+                    textureInfo = VulkanTextureInfo(
+                        format = VulkanFormat(VK_FORMAT_B8G8R8A8_UNORM),
+                        imageUsageFlags =
+                            VulkanImageUsageFlags.COLOR_ATTACHMENT or
+                                VulkanImageUsageFlags.INPUT_ATTACHMENT or
+                                VulkanImageUsageFlags.TRANSFER_SRC or
+                                VulkanImageUsageFlags.TRANSFER_DST
+                    ),
+                    imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    queueFamilyIndex = vk.queueFamilyIndex,
+                    imagePtr = target.image
+                ).use { backendTexture ->
+                    val surface = Surface.wrapBackendTexture(
+                        recorder = recorder,
+                        backendTexture = backendTexture,
+                        colorSpace = null
+                    ) ?: error("Graphite Surface.wrapBackendTexture returned null")
 
-                        surface.use {
-                            evidence["graphite.surface"] = "CREATED"
-                            surface.canvas.clear(WHITE)
+                    surface.use {
+                        evidence["graphite.surface"] = "CREATED"
+                        surface.canvas.clear(WHITE)
 
-                            paintOnSkiaCanvas(
-                                canvas = surface.canvas,
-                                density = density,
-                                plotPosition = plotPosition,
-                                paint = paint
-                            )
-                            evidence["graphite.provider.paint"] = "PASS"
+                        paintOnSkiaCanvas(
+                            canvas = surface.canvas,
+                            density = density,
+                            plotPosition = plotPosition,
+                            paint = paint
+                        )
+                        evidence["graphite.provider.paint"] = "PASS"
 
-                            recorder.snap().use { recording ->
-                                context.insertRecording(recording)
-                                context.submit(syncCpu = true)
-                            }
-                            evidence["graphite.submit"] = "PASS"
-
-                            surface.makeImageSnapshot().use { snapshot ->
-                                check(snapshot.width == width && snapshot.height == height)
-                                evidence["graphite.snapshot"] = "PASS"
-                            }
-
-                            graphitePixels = readBackGraphiteImage(vk, target.image)
-                            savePixels(graphitePixels, graphitePng)
-                            evidence["graphite.readback"] = "PASS"
+                        recorder.snap().use { recording ->
+                            context.insertRecording(recording)
+                            context.submit(syncCpu = true)
                         }
+                        evidence["graphite.submit"] = "PASS"
+
+                        surface.makeImageSnapshot().use { snapshot ->
+                            check(snapshot.width == width && snapshot.height == height)
+                            evidence["graphite.snapshot"] = "PASS"
+                        }
+
+                        graphitePixels = readBackGraphiteImage(vk, target.image)
+                        if (paintCount == 1) {
+                            savePixels(graphitePixels, graphitePng)
+                        }
+                        evidence["graphite.readback"] = "PASS"
                     }
                 }
             }
@@ -195,8 +197,6 @@ private class GraphiteBackendProvider(
             vkDeviceWaitIdle(vk.device)
             vkDestroyImage(vk.device, target.image, null)
             vkFreeMemory(vk.device, target.memory, null)
-            vkDestroyDevice(vk.device, null)
-            vkDestroyInstance(vk.instance, null)
         }
 
         val buffered = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
@@ -206,7 +206,65 @@ private class GraphiteBackendProvider(
         }
 
         evidence["provider.composite_to_target"] = "PASS"
-        evidence["provider.lifecycle"] = "PER_PAINT_CONTEXT"
+        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT"
+        evidence["graphite.context.create_count"] = contextCreateCount.toString()
+    }
+
+    @OptIn(ExperimentalSkikoApi::class)
+    private fun ensurePersistentContext(): Pair<VulkanObjects, GraphiteContext> {
+        val existingVk = vulkan
+        val existingContext = graphiteContext
+        if (existingVk != null && existingContext != null) {
+            return existingVk to existingContext
+        }
+
+        val vk = createVulkanObjects()
+        evidence["vulkan.device.name"] = vk.deviceName
+        try {
+            val context = GraphiteContext.makeVulkan(
+                instancePtr = vk.instance.address(),
+                physicalDevicePtr = vk.physicalDevice.address(),
+                devicePtr = vk.device.address(),
+                queuePtr = vk.queue.address(),
+                graphicsQueueIndex = vk.queueFamilyIndex,
+                maxApiVersion = VK_API_VERSION_1_1
+            )
+            vulkan = vk
+            graphiteContext = context
+            contextCreateCount++
+            evidence["graphite.context"] = "CREATED"
+            evidence["graphite.context.create_count"] = contextCreateCount.toString()
+            evidence["vulkan.device.lifecycle"] = "PERSISTENT_CONTEXT"
+            return vk to context
+        } catch (t: Throwable) {
+            vkDestroyDevice(vk.device, null)
+            vkDestroyInstance(vk.instance, null)
+            throw t
+        }
+    }
+
+    override fun dispose() {
+        if (disposed) return
+        disposed = true
+        disposeCount++
+        evidence["provider.dispose_count"] = disposeCount.toString()
+
+        val vk = vulkan
+        try {
+            if (vk != null) {
+                vkDeviceWaitIdle(vk.device)
+            }
+            graphiteContext?.close()
+            graphiteContext = null
+            evidence["graphite.context.dispose"] = "PASS"
+        } finally {
+            if (vk != null) {
+                vkDestroyDevice(vk.device, null)
+                vkDestroyInstance(vk.instance, null)
+                evidence["vulkan.device.dispose"] = "PASS"
+            }
+            vulkan = null
+        }
     }
 }
 
@@ -220,6 +278,7 @@ fun main() {
     val directPng = outputDir.resolve("direct-native-canvas.png")
     val graphitePng = outputDir.resolve("graphite-provider-offscreen.png")
     val compositedPng = outputDir.resolve("graphite-provider-composited.png")
+    val secondFramePng = outputDir.resolve("graphite-provider-second-frame.png")
 
     var stage = "startup"
     var prepared: PreparedPlot? = null
@@ -277,6 +336,7 @@ fun main() {
 
         val previousFlag = System.getProperty(DESKTOP_RENDER_PATH_PROPERTY)
         val compositedPixels: IntArray
+        val secondFramePixels: IntArray
         try {
             System.setProperty(DESKTOP_RENDER_PATH_PROPERTY, "graphite-offscreen")
             val resolved = resolveDesktopRenderPath()
@@ -285,35 +345,22 @@ fun main() {
             }
             evidence["feature_flag.resolve"] = "PASS"
 
-            stage = "provider-render"
-            Surface.makeRasterN32Premul(WIDTH, HEIGHT).use { surface ->
-                surface.canvas.clear(WHITE)
-
-                val effective = paintDesktopPlot(
-                    canvas = surface.canvas,
-                    width = WIDTH,
-                    height = HEIGHT,
-                    density = BRIDGE_DENSITY,
-                    plotPosition = DoubleVector(PLOT_X, PLOT_Y)
-                ) { context ->
-                    prepared.drawable.paint(context)
-                }
-
-                check(effective == DesktopRenderPath.OFFSCREEN_COMPOSITE) {
-                    "Unexpected effective render path: $effective"
-                }
-                evidence["effective.path"] = effective.name
-                evidence["plot.drawable.paint"] = "PASS"
-
-                surface.makeImageSnapshot().use { image ->
-                    Bitmap.makeFromImage(image).use { bitmap ->
-                        compositedPixels = IntArray(WIDTH * HEIGHT) { index ->
-                            bitmap.getColor(index % WIDTH, index / WIDTH)
-                        }
-                    }
-                }
-            }
+            stage = "provider-render-first-frame"
+            compositedPixels = renderViaSelectedProvider(prepared.drawable)
             savePixels(compositedPixels, compositedPng)
+
+            stage = "provider-render-second-frame"
+            secondFramePixels = renderViaSelectedProvider(prepared.drawable)
+            savePixels(secondFramePixels, secondFramePng)
+
+            val frameDifference = pixelDifferenceRatio(compositedPixels, secondFramePixels)
+            evidence["multi_frame.pixel_difference_ratio"] = frameDifference.toString()
+            check(frameDifference <= 0.001) {
+                "Persistent Graphite context produced inconsistent consecutive frames: difference=$frameDifference"
+            }
+            evidence["multi_frame.consistency"] = "PASS"
+            evidence["multi_frame.count"] = "2"
+            evidence["graphite.context.reuse"] = "PASS"
         } finally {
             if (previousFlag == null) {
                 System.clearProperty(DESKTOP_RENDER_PATH_PROPERTY)
@@ -328,6 +375,22 @@ fun main() {
             "Graphite provider registration did not release ownership"
         }
         evidence["provider.registration.dispose"] = "PASS"
+        check(evidence["provider.paint_count"] == "2") {
+            "Expected two provider paints, got ${evidence["provider.paint_count"]}"
+        }
+        check(evidence["graphite.context.create_count"] == "1") {
+            "Persistent Graphite context was recreated: ${evidence["graphite.context.create_count"]}"
+        }
+        check(evidence["graphite.context.reuse_count"] == "1") {
+            "Persistent Graphite context reuse count is unexpected: ${evidence["graphite.context.reuse_count"]}"
+        }
+        check(evidence["provider.dispose_count"] == "1") {
+            "Provider dispose count is unexpected: ${evidence["provider.dispose_count"]}"
+        }
+        check(evidence["graphite.context.dispose"] == "PASS")
+        check(evidence["vulkan.device.dispose"] == "PASS")
+        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT"
+        evidence["persistent.context.lifecycle"] = "PASS"
 
         stage = "composite-structure"
         evidence.putAll(assertPlotStructure("provider", compositedPixels))
@@ -342,11 +405,11 @@ fun main() {
         }
         evidence["comparison"] = "PASS"
 
-        evidence["result"] = "GRAPHITE_BACKEND_PROVIDER_CAPABLE"
+        evidence["result"] = "PERSISTENT_GRAPHITE_CONTEXT_CAPABLE"
         evidence["failure.stage"] = "none"
         writeEvidence(resultFile, evidence)
 
-        println("GRAPHITE_BACKEND_PROVIDER_RESULT PASS")
+        println("PERSISTENT_GRAPHITE_CONTEXT_RESULT PASS")
         evidence.forEach { (key, value) -> println("$key=$value") }
     } catch (t: Throwable) {
         evidence["result"] = "FAIL"
@@ -354,10 +417,38 @@ fun main() {
         evidence["failure.type"] = t::class.qualifiedName ?: t::class.simpleName.orEmpty()
         evidence["failure.message"] = sanitize(t.message ?: "no message")
         writeEvidence(resultFile, evidence)
-        println("GRAPHITE_BACKEND_PROVIDER_RESULT FAIL stage=$stage")
+        println("PERSISTENT_GRAPHITE_CONTEXT_RESULT FAIL stage=$stage")
         throw t
     } finally {
         prepared?.registration?.dispose()
+    }
+}
+
+private fun renderViaSelectedProvider(drawable: PlotCanvasDrawable): IntArray {
+    Surface.makeRasterN32Premul(WIDTH, HEIGHT).use { surface ->
+        surface.canvas.clear(WHITE)
+
+        val effective = paintDesktopPlot(
+            canvas = surface.canvas,
+            width = WIDTH,
+            height = HEIGHT,
+            density = BRIDGE_DENSITY,
+            plotPosition = DoubleVector(PLOT_X, PLOT_Y)
+        ) { context ->
+            drawable.paint(context)
+        }
+
+        check(effective == DesktopRenderPath.OFFSCREEN_COMPOSITE) {
+            "Unexpected effective render path: $effective"
+        }
+
+        surface.makeImageSnapshot().use { image ->
+            Bitmap.makeFromImage(image).use { bitmap ->
+                return IntArray(WIDTH * HEIGHT) { index ->
+                    bitmap.getColor(index % WIDTH, index / WIDTH)
+                }
+            }
+        }
     }
 }
 
