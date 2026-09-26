@@ -28,6 +28,7 @@ import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.letsPlot.compose.canvas.SkiaCanvasPeer
 import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
 import org.jetbrains.letsPlot.core.interact.event.ToolEventDispatcher
+import org.jetbrains.letsPlot.core.plot.builder.interact.tools.DefaultFigureToolsController
 import org.jetbrains.letsPlot.core.spec.Option.Meta.Kind.GG_TOOLBAR
 import org.jetbrains.letsPlot.core.spec.config.PlotConfig
 import org.jetbrains.letsPlot.core.spec.front.SpecOverrideUtil.applySpecOverride
@@ -81,6 +82,27 @@ fun PlotPanelComposeCanvas(
 
     var errorMessage: String? by remember(processedPlotSpec, panelSize) { mutableStateOf(null) }
 
+    val hasToolbar = GG_TOOLBAR in processedPlotSpec
+    val defaultInteractionController = remember(figureModel) {
+        DefaultFigureToolsController(
+            figure = figureModel,
+            errorMessageHandler = { message ->
+                LOG.error { "Figure interaction error: $message" }
+            }
+        )
+    }
+    val defaultInteractionRegistration = remember(figureModel, hasToolbar, defaultInteractionController) {
+        if (hasToolbar) {
+            // PlotToolbar owns the FigureToolsController callback when it is present.
+            Registration.EMPTY
+        } else {
+            // Default wheel/pan interactions must update the FigureModel even when no toolbar is rendered.
+            figureModel.addToolEventCallback { event ->
+                defaultInteractionController.handleToolFeedback(event)
+            }
+        }
+    }
+
     var redrawTrigger by remember { mutableStateOf(0) }
 
     val skiaCanvasPeer = remember { SkiaCanvasPeer(SkiaFontManager.DEFAULT) }
@@ -122,7 +144,13 @@ fun PlotPanelComposeCanvas(
     }
 
 
-    DisposableEffect(plotDrawable, figureModel, repaintRegistration, canvasRegistration) {
+    DisposableEffect(
+        plotDrawable,
+        figureModel,
+        repaintRegistration,
+        canvasRegistration,
+        defaultInteractionRegistration
+    ) {
         plotDrawable.onHrefClick(::browseLink)
 
         onDispose {
@@ -141,6 +169,7 @@ fun PlotPanelComposeCanvas(
             // the remaining cleanup from running.
             disposeRegistrationSafely("canvas", canvasRegistration)
             disposeRegistrationSafely("repaint", repaintRegistration)
+            disposeRegistrationSafely("figure-tools", defaultInteractionRegistration)
         }
     }
 
