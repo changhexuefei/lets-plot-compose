@@ -335,6 +335,7 @@ fun main() {
     val graphitePng = outputDir.resolve("graphite-provider-offscreen.png")
     val compositedPng = outputDir.resolve("graphite-provider-composited.png")
     val secondFramePng = outputDir.resolve("graphite-provider-second-frame.png")
+    val resizedFramePng = outputDir.resolve("graphite-provider-resized-frame.png")
 
     var stage = "startup"
     var prepared: PreparedPlot? = null
@@ -391,8 +392,10 @@ fun main() {
         evidence["provider.install"] = "PASS"
 
         val previousFlag = System.getProperty(DESKTOP_RENDER_PATH_PROPERTY)
-        val compositedPixels: IntArray
-        val secondFramePixels: IntArray
+        lateinit var firstFramePixels: IntArray
+        lateinit var secondFramePixels: IntArray
+        lateinit var resizedFirstFramePixels: IntArray
+        lateinit var resizedLastFramePixels: IntArray
         try {
             System.setProperty(DESKTOP_RENDER_PATH_PROPERTY, "graphite-offscreen")
             val resolved = resolveDesktopRenderPath()
@@ -401,24 +404,51 @@ fun main() {
             }
             evidence["feature_flag.resolve"] = "PASS"
 
-            stage = "provider-render-first-frame"
-            compositedPixels = renderViaSelectedProvider(prepared.drawable)
-            evidence["effective.path"] = DesktopRenderPath.OFFSCREEN_COMPOSITE.name
-            evidence["plot.drawable.paint"] = "PASS"
-            savePixels(compositedPixels, compositedPng)
-
-            stage = "provider-render-second-frame"
-            secondFramePixels = renderViaSelectedProvider(prepared.drawable)
-            savePixels(secondFramePixels, secondFramePng)
-
-            val frameDifference = pixelDifferenceRatio(compositedPixels, secondFramePixels)
-            evidence["multi_frame.pixel_difference_ratio"] = frameDifference.toString()
-            check(frameDifference <= 0.001) {
-                "Persistent Graphite context produced inconsistent consecutive frames: difference=$frameDifference"
+            stage = "provider-render-same-size"
+            repeat(SAME_SIZE_FRAME_COUNT) { index ->
+                val pixels = renderViaSelectedProvider(prepared.drawable, WIDTH, HEIGHT)
+                when (index) {
+                    0 -> {
+                        firstFramePixels = pixels
+                        evidence["effective.path"] = DesktopRenderPath.OFFSCREEN_COMPOSITE.name
+                        evidence["plot.drawable.paint"] = "PASS"
+                        savePixels(pixels, compositedPng, WIDTH, HEIGHT)
+                    }
+                    1 -> {
+                        secondFramePixels = pixels
+                        savePixels(pixels, secondFramePng, WIDTH, HEIGHT)
+                    }
+                }
             }
-            evidence["multi_frame.consistency"] = "PASS"
-            evidence["multi_frame.count"] = "2"
+
+            val sameSizeDifference = pixelDifferenceRatio(firstFramePixels, secondFramePixels)
+            evidence["same_size.pixel_difference_ratio"] = sameSizeDifference.toString()
+            check(sameSizeDifference <= 0.001) {
+                "Persistent Graphite render target produced inconsistent same-size frames: difference=$sameSizeDifference"
+            }
+            evidence["same_size.consistency"] = "PASS"
+
+            stage = "provider-render-resize"
+            repeat(RESIZED_FRAME_COUNT) { index ->
+                val pixels = renderViaSelectedProvider(prepared.drawable, RESIZED_WIDTH, RESIZED_HEIGHT)
+                if (index == 0) {
+                    resizedFirstFramePixels = pixels
+                    savePixels(pixels, resizedFramePng, RESIZED_WIDTH, RESIZED_HEIGHT)
+                }
+                if (index == RESIZED_FRAME_COUNT - 1) {
+                    resizedLastFramePixels = pixels
+                }
+            }
+
+            val resizedDifference = pixelDifferenceRatio(resizedFirstFramePixels, resizedLastFramePixels)
+            evidence["resized.pixel_difference_ratio"] = resizedDifference.toString()
+            check(resizedDifference <= 0.001) {
+                "Persistent resized Graphite target produced inconsistent frames: difference=$resizedDifference"
+            }
+            evidence["resized.consistency"] = "PASS"
+            evidence["multi_frame.count"] = (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT).toString()
             evidence["graphite.context.reuse"] = "PASS"
+            evidence["image.layout.tracking"] = "PASS"
         } finally {
             if (previousFlag == null) {
                 System.clearProperty(DESKTOP_RENDER_PATH_PROPERTY)
@@ -433,28 +463,44 @@ fun main() {
             "Graphite provider registration did not release ownership"
         }
         evidence["provider.registration.dispose"] = "PASS"
-        check(evidence["provider.paint_count"] == "2") {
-            "Expected two provider paints, got ${evidence["provider.paint_count"]}"
+        check(evidence["provider.paint_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT).toString()) {
+            "Unexpected provider paint count: ${evidence["provider.paint_count"]}"
         }
         check(evidence["graphite.context.create_count"] == "1") {
             "Persistent Graphite context was recreated: ${evidence["graphite.context.create_count"]}"
         }
-        check(evidence["graphite.context.reuse_count"] == "1") {
+        check(evidence["graphite.context.reuse_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT - 1).toString()) {
             "Persistent Graphite context reuse count is unexpected: ${evidence["graphite.context.reuse_count"]}"
+        }
+        check(evidence["render_target.create_count"] == "2") {
+            "Persistent render target create count is unexpected: ${evidence["render_target.create_count"]}"
+        }
+        check(evidence["render_target.reuse_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT - 2).toString()) {
+            "Persistent render target reuse count is unexpected: ${evidence["render_target.reuse_count"]}"
+        }
+        check(evidence["render_target.resize_count"] == "1") {
+            "Persistent render target resize count is unexpected: ${evidence["render_target.resize_count"]}"
+        }
+        check(evidence["render_target.dispose_count"] == "2") {
+            "Persistent render target dispose count is unexpected: ${evidence["render_target.dispose_count"]}"
         }
         check(evidence["provider.dispose_count"] == "1") {
             "Provider dispose count is unexpected: ${evidence["provider.dispose_count"]}"
         }
+        check(evidence["render_target.resize"] == "PASS")
+        check(evidence["render_target.final_dispose"] == "PASS")
         check(evidence["graphite.context.dispose"] == "PASS")
         check(evidence["vulkan.device.dispose"] == "PASS")
-        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT"
+        evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT_AND_RENDER_TARGET"
         evidence["persistent.context.lifecycle"] = "PASS"
+        evidence["persistent.render_target.lifecycle"] = "PASS"
 
         stage = "composite-structure"
-        evidence.putAll(assertPlotStructure("provider", compositedPixels))
+        evidence.putAll(assertPlotStructure("provider", firstFramePixels, WIDTH, HEIGHT))
+        evidence.putAll(assertPlotStructure("provider_resized", resizedFirstFramePixels, RESIZED_WIDTH, RESIZED_HEIGHT))
 
         stage = "comparison"
-        val difference = pixelDifferenceRatio(directPixels, compositedPixels)
+        val difference = pixelDifferenceRatio(directPixels, firstFramePixels)
         evidence["comparison.pixel_difference_ratio"] = difference.toString()
         evidence["comparison.max_allowed_ratio"] = MAX_PIXEL_DIFFERENCE_RATIO.toString()
         check(difference <= MAX_PIXEL_DIFFERENCE_RATIO) {
@@ -463,11 +509,11 @@ fun main() {
         }
         evidence["comparison"] = "PASS"
 
-        evidence["result"] = "PERSISTENT_GRAPHITE_CONTEXT_CAPABLE"
+        evidence["result"] = "PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE"
         evidence["failure.stage"] = "none"
         writeEvidence(resultFile, evidence)
 
-        println("PERSISTENT_GRAPHITE_CONTEXT_RESULT PASS")
+        println("PERSISTENT_GRAPHITE_RENDER_TARGET_RESULT PASS")
         evidence.forEach { (key, value) -> println("$key=$value") }
     } catch (t: Throwable) {
         evidence["result"] = "FAIL"
@@ -475,21 +521,25 @@ fun main() {
         evidence["failure.type"] = t::class.qualifiedName ?: t::class.simpleName.orEmpty()
         evidence["failure.message"] = sanitize(t.message ?: "no message")
         writeEvidence(resultFile, evidence)
-        println("PERSISTENT_GRAPHITE_CONTEXT_RESULT FAIL stage=$stage")
+        println("PERSISTENT_GRAPHITE_RENDER_TARGET_RESULT FAIL stage=$stage")
         throw t
     } finally {
         prepared?.registration?.dispose()
     }
 }
 
-private fun renderViaSelectedProvider(drawable: PlotCanvasDrawable): IntArray {
-    Surface.makeRasterN32Premul(WIDTH, HEIGHT).use { surface ->
+private fun renderViaSelectedProvider(
+    drawable: PlotCanvasDrawable,
+    width: Int,
+    height: Int
+): IntArray {
+    Surface.makeRasterN32Premul(width, height).use { surface ->
         surface.canvas.clear(WHITE)
 
         val effective = paintDesktopPlot(
             canvas = surface.canvas,
-            width = WIDTH,
-            height = HEIGHT,
+            width = width,
+            height = height,
             density = BRIDGE_DENSITY,
             plotPosition = DoubleVector(PLOT_X, PLOT_Y)
         ) { context ->
@@ -502,8 +552,8 @@ private fun renderViaSelectedProvider(drawable: PlotCanvasDrawable): IntArray {
 
         surface.makeImageSnapshot().use { image ->
             Bitmap.makeFromImage(image).use { bitmap ->
-                return IntArray(WIDTH * HEIGHT) { index ->
-                    bitmap.getColor(index % WIDTH, index / WIDTH)
+                return IntArray(width * height) { index ->
+                    bitmap.getColor(index % width, index / width)
                 }
             }
         }
