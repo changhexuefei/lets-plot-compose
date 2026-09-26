@@ -1912,7 +1912,7 @@ jobs:
 
           Get-Content $result
           foreach ($pattern in @(
-            '^result=PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE$',
+            '^result=GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_CAPABLE$',
             '^feature_flag.property=letsplot\.compose\.desktop\.renderPath$',
             '^feature_flag.value=graphite-offscreen$',
             '^feature_flag.resolve=PASS$',
@@ -1927,7 +1927,7 @@ jobs:
             '^graphite.context=CREATED$',
             '^graphite.context.create_count=1$',
             '^graphite.context.reuse=PASS$',
-            '^graphite.context.reuse_count=19$',
+            '^graphite.context.reuse_count=22$',
             '^graphite.surface=CREATED$',
             '^graphite.provider.paint=PASS$',
             '^graphite.submit=PASS$',
@@ -1936,14 +1936,25 @@ jobs:
             '^provider.composite_to_target=PASS$',
             '^provider.registration.dispose=PASS$',
             '^provider.lifecycle=PERSISTENT_CONTEXT_AND_RENDER_TARGET$',
-            '^provider.paint_count=20$',
-            '^multi_frame.count=20$',
+            '^provider.paint_count=23$',
+            '^successful_frame.count=21$',
+            '^failure_recovery.count=2$',
             '^same_size.consistency=PASS$',
             '^resized.consistency=PASS$',
+            '^failure.paint.injected=PASS$',
+            '^failure.paint.caught=PASS$',
+            '^failure.paint.target_preserved=PASS$',
+            '^failure.paint.layout_preserved=PASS$',
+            '^failure.paint.recovery=PASS$',
+            '^failure.resize.create.injected=PASS$',
+            '^failure.resize.target_released=PASS$',
+            '^failure.resize.caught=PASS$',
+            '^failure.resize.no_stale_target=PASS$',
+            '^failure.resize.recovery=PASS$',
             '^render_target.lifecycle=PERSISTENT_BY_SIZE$',
             '^render_target.create_count=2$',
             '^render_target.reuse=PASS$',
-            '^render_target.reuse_count=18$',
+            '^render_target.reuse_count=20$',
             '^render_target.resize=PASS$',
             '^render_target.resize_count=1$',
             '^render_target.dispose_count=2$',
@@ -2291,7 +2302,7 @@ jobs:
           require_line "$render_path" "renderer.adoption=NOT_STARTED"
           require_line "$render_path" "tests=PASS"
 
-          require_line "$graphite_provider" "result=PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE"
+          require_line "$graphite_provider" "result=GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_CAPABLE"
           require_line "$graphite_provider" "feature_flag.value=graphite-offscreen"
           require_line "$graphite_provider" "feature_flag.resolve=PASS"
           require_line "$graphite_provider" "requested.path=OFFSCREEN_COMPOSITE"
@@ -2301,21 +2312,32 @@ jobs:
           require_line "$graphite_provider" "graphite.context=CREATED"
           require_line "$graphite_provider" "graphite.context.create_count=1"
           require_line "$graphite_provider" "graphite.context.reuse=PASS"
-          require_line "$graphite_provider" "graphite.context.reuse_count=19"
+          require_line "$graphite_provider" "graphite.context.reuse_count=22"
           require_line "$graphite_provider" "graphite.surface=CREATED"
           require_line "$graphite_provider" "graphite.submit=PASS"
           require_line "$graphite_provider" "graphite.readback=PASS"
           require_line "$graphite_provider" "provider.composite_to_target=PASS"
           require_line "$graphite_provider" "provider.registration.dispose=PASS"
           require_line "$graphite_provider" "provider.lifecycle=PERSISTENT_CONTEXT_AND_RENDER_TARGET"
-          require_line "$graphite_provider" "provider.paint_count=20"
-          require_line "$graphite_provider" "multi_frame.count=20"
+          require_line "$graphite_provider" "provider.paint_count=23"
+          require_line "$graphite_provider" "successful_frame.count=21"
+          require_line "$graphite_provider" "failure_recovery.count=2"
           require_line "$graphite_provider" "same_size.consistency=PASS"
           require_line "$graphite_provider" "resized.consistency=PASS"
+          require_line "$graphite_provider" "failure.paint.injected=PASS"
+          require_line "$graphite_provider" "failure.paint.caught=PASS"
+          require_line "$graphite_provider" "failure.paint.target_preserved=PASS"
+          require_line "$graphite_provider" "failure.paint.layout_preserved=PASS"
+          require_line "$graphite_provider" "failure.paint.recovery=PASS"
+          require_line "$graphite_provider" "failure.resize.create.injected=PASS"
+          require_line "$graphite_provider" "failure.resize.target_released=PASS"
+          require_line "$graphite_provider" "failure.resize.caught=PASS"
+          require_line "$graphite_provider" "failure.resize.no_stale_target=PASS"
+          require_line "$graphite_provider" "failure.resize.recovery=PASS"
           require_line "$graphite_provider" "render_target.lifecycle=PERSISTENT_BY_SIZE"
           require_line "$graphite_provider" "render_target.create_count=2"
           require_line "$graphite_provider" "render_target.reuse=PASS"
-          require_line "$graphite_provider" "render_target.reuse_count=18"
+          require_line "$graphite_provider" "render_target.reuse_count=20"
           require_line "$graphite_provider" "render_target.resize=PASS"
           require_line "$graphite_provider" "render_target.resize_count=1"
           require_line "$graphite_provider" "render_target.dispose_count=2"
@@ -2340,7 +2362,7 @@ jobs:
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE
+          result=GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2367,17 +2389,20 @@ jobs:
           graphite.backend.lifecycle=PERSISTENT_CONTEXT_AND_RENDER_TARGET
           graphite.backend.context_create_count=1
           graphite.backend.context_reuse=PASS
-          graphite.backend.multi_frame=20_FRAME_RESIZE_PASS
+          graphite.backend.successful_frames=21
+          graphite.backend.failure_recovery_count=2
+          graphite.backend.paint_failure_recovery=PASS
+          graphite.backend.resize_failure_recovery=PASS
           graphite.backend.render_target=PERSISTENT_BY_SIZE
           graphite.backend.render_target_create_count=2
-          graphite.backend.render_target_reuse_count=18
+          graphite.backend.render_target_reuse_count=20
           graphite.backend.render_target_resize=PASS
           graphite.backend.image_layout_tracking=PASS
           graphite.backend.dispose=PASS
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=OPT_IN_ONLY
-          next.required=GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY
+          next.required=COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF

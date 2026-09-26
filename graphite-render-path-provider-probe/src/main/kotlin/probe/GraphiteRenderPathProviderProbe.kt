@@ -98,6 +98,8 @@ private data class PreparedPlot(
     val registration: Registration
 )
 
+private class SyntheticProbeFailure(message: String) : RuntimeException(message)
+
 private class GraphiteBackendProvider(
     private val evidence: MutableMap<String, String>,
     private val graphitePng: File
@@ -114,6 +116,16 @@ private class GraphiteBackendProvider(
     private var renderTargetReuseCount = 0
     private var renderTargetResizeCount = 0
     private var renderTargetDisposeCount = 0
+    private var failNextRenderTargetCreate = false
+
+    fun injectRenderTargetCreateFailureOnce() {
+        check(!failNextRenderTargetCreate) { "Render-target create failure is already armed" }
+        failNextRenderTargetCreate = true
+    }
+
+    fun hasRenderTarget(): Boolean = renderTarget != null
+
+    fun currentRenderTargetLayoutName(): String? = renderTarget?.let { layoutName(it.layout) }
 
     @OptIn(ExperimentalSkikoApi::class)
     override fun paint(
@@ -151,7 +163,7 @@ private class GraphiteBackendProvider(
         if (paintCount == 2) {
             evidence["image.second_frame.layout_before_wrap"] = layoutName(target.layout)
         }
-        if (paintCount == SAME_SIZE_FRAME_COUNT + 1) {
+        if (renderTargetCreateCount == 2 && "image.resize_first_frame.layout_before_wrap" !in evidence) {
             evidence["image.resize_first_frame.layout_before_wrap"] = layoutName(target.layout)
         }
 
@@ -247,6 +259,13 @@ private class GraphiteBackendProvider(
             renderTargetResizeCount++
             evidence["render_target.resize"] = "PASS"
             evidence["render_target.resize_count"] = renderTargetResizeCount.toString()
+        }
+
+        if (failNextRenderTargetCreate) {
+            failNextRenderTargetCreate = false
+            evidence["failure.resize.create.injected"] = "PASS"
+            evidence["failure.resize.target_released"] = if (renderTarget == null) "PASS" else "FAIL"
+            throw SyntheticProbeFailure("synthetic-render-target-create-failure")
         }
 
         return createRenderImage(vk, width, height).also { created ->
@@ -400,6 +419,7 @@ fun main() {
         val previousFlag = System.getProperty(DESKTOP_RENDER_PATH_PROPERTY)
         lateinit var firstFramePixels: IntArray
         lateinit var secondFramePixels: IntArray
+        lateinit var paintRecoveryPixels: IntArray
         lateinit var resizedFirstFramePixels: IntArray
         lateinit var resizedLastFramePixels: IntArray
         try {
@@ -434,25 +454,71 @@ fun main() {
             }
             evidence["same_size.consistency"] = "PASS"
 
-            stage = "provider-render-resize"
-            repeat(RESIZED_FRAME_COUNT) { index ->
-                val pixels = renderViaSelectedProvider(prepared.drawable, RESIZED_WIDTH, RESIZED_HEIGHT)
-                if (index == 0) {
-                    resizedFirstFramePixels = pixels
-                    savePixels(pixels, resizedFramePng, RESIZED_WIDTH, RESIZED_HEIGHT)
+            stage = "provider-paint-failure"
+            try {
+                renderSyntheticPaintFailure(WIDTH, HEIGHT)
+                error("Synthetic paint failure did not propagate")
+            } catch (failure: SyntheticProbeFailure) {
+                check(failure.message == "synthetic-paint-failure") {
+                    "Unexpected synthetic paint failure: ${failure.message}"
                 }
-                if (index == RESIZED_FRAME_COUNT - 1) {
-                    resizedLastFramePixels = pixels
+                evidence["failure.paint.injected"] = "PASS"
+                evidence["failure.paint.caught"] = "PASS"
+            }
+            check(provider.hasRenderTarget()) {
+                "Paint failure unexpectedly discarded the persistent render target"
+            }
+            check(provider.currentRenderTargetLayoutName() == "TRANSFER_SRC_OPTIMAL") {
+                "Paint failure changed tracked target layout: ${provider.currentRenderTargetLayoutName()}"
+            }
+            evidence["failure.paint.target_preserved"] = "PASS"
+            evidence["failure.paint.layout_preserved"] = "PASS"
+
+            stage = "provider-paint-recovery"
+            paintRecoveryPixels = renderViaSelectedProvider(prepared.drawable, WIDTH, HEIGHT)
+            val paintRecoveryDifference = pixelDifferenceRatio(firstFramePixels, paintRecoveryPixels)
+            evidence["failure.paint.recovery_difference_ratio"] = paintRecoveryDifference.toString()
+            check(paintRecoveryDifference <= 0.001) {
+                "Paint failure recovery frame diverged: difference=$paintRecoveryDifference"
+            }
+            evidence["failure.paint.recovery"] = "PASS"
+
+            stage = "provider-resize-create-failure"
+            provider.injectRenderTargetCreateFailureOnce()
+            try {
+                renderViaSelectedProvider(prepared.drawable, RESIZED_WIDTH, RESIZED_HEIGHT)
+                error("Synthetic resize create failure did not propagate")
+            } catch (failure: SyntheticProbeFailure) {
+                check(failure.message == "synthetic-render-target-create-failure") {
+                    "Unexpected resize failure: ${failure.message}"
                 }
+                evidence["failure.resize.caught"] = "PASS"
+            }
+            check(!provider.hasRenderTarget()) {
+                "Failed resize left a stale render target installed"
+            }
+            evidence["failure.resize.no_stale_target"] = "PASS"
+
+            stage = "provider-resize-recovery"
+            resizedFirstFramePixels = renderViaSelectedProvider(prepared.drawable, RESIZED_WIDTH, RESIZED_HEIGHT)
+            savePixels(resizedFirstFramePixels, resizedFramePng, RESIZED_WIDTH, RESIZED_HEIGHT)
+            evidence["failure.resize.recovery"] = "PASS"
+
+            stage = "provider-render-resized-stable"
+            resizedLastFramePixels = resizedFirstFramePixels
+            repeat(RESIZED_FRAME_COUNT - 1) {
+                resizedLastFramePixels = renderViaSelectedProvider(prepared.drawable, RESIZED_WIDTH, RESIZED_HEIGHT)
             }
 
             val resizedDifference = pixelDifferenceRatio(resizedFirstFramePixels, resizedLastFramePixels)
             evidence["resized.pixel_difference_ratio"] = resizedDifference.toString()
             check(resizedDifference <= 0.001) {
-                "Persistent resized Graphite target produced inconsistent frames: difference=$resizedDifference"
+                "Recovered resized Graphite target produced inconsistent frames: difference=$resizedDifference"
             }
             evidence["resized.consistency"] = "PASS"
-            evidence["multi_frame.count"] = (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT).toString()
+            evidence["successful_frame.count"] =
+                (SAME_SIZE_FRAME_COUNT + 1 + RESIZED_FRAME_COUNT).toString()
+            evidence["failure_recovery.count"] = "2"
             evidence["graphite.context.reuse"] = "PASS"
             evidence["image.layout.tracking"] = "PASS"
         } finally {
@@ -469,19 +535,21 @@ fun main() {
             "Graphite provider registration did not release ownership"
         }
         evidence["provider.registration.dispose"] = "PASS"
-        check(evidence["provider.paint_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT).toString()) {
+        check(evidence["provider.paint_count"] == "23") {
             "Unexpected provider paint count: ${evidence["provider.paint_count"]}"
         }
+        check(evidence["successful_frame.count"] == "21")
+        check(evidence["failure_recovery.count"] == "2")
         check(evidence["graphite.context.create_count"] == "1") {
             "Persistent Graphite context was recreated: ${evidence["graphite.context.create_count"]}"
         }
-        check(evidence["graphite.context.reuse_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT - 1).toString()) {
+        check(evidence["graphite.context.reuse_count"] == "22") {
             "Persistent Graphite context reuse count is unexpected: ${evidence["graphite.context.reuse_count"]}"
         }
         check(evidence["render_target.create_count"] == "2") {
             "Persistent render target create count is unexpected: ${evidence["render_target.create_count"]}"
         }
-        check(evidence["render_target.reuse_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT - 2).toString()) {
+        check(evidence["render_target.reuse_count"] == "20") {
             "Persistent render target reuse count is unexpected: ${evidence["render_target.reuse_count"]}"
         }
         check(evidence["render_target.resize_count"] == "1") {
@@ -495,6 +563,16 @@ fun main() {
         }
         check(evidence["render_target.resize"] == "PASS")
         check(evidence["render_target.final_dispose"] == "PASS")
+        check(evidence["failure.paint.injected"] == "PASS")
+        check(evidence["failure.paint.caught"] == "PASS")
+        check(evidence["failure.paint.target_preserved"] == "PASS")
+        check(evidence["failure.paint.layout_preserved"] == "PASS")
+        check(evidence["failure.paint.recovery"] == "PASS")
+        check(evidence["failure.resize.create.injected"] == "PASS")
+        check(evidence["failure.resize.target_released"] == "PASS")
+        check(evidence["failure.resize.caught"] == "PASS")
+        check(evidence["failure.resize.no_stale_target"] == "PASS")
+        check(evidence["failure.resize.recovery"] == "PASS")
         check(evidence["image.second_frame.layout_before_wrap"] == "TRANSFER_SRC_OPTIMAL") {
             "Second frame did not reuse the tracked readback layout: ${evidence["image.second_frame.layout_before_wrap"]}"
         }
@@ -524,11 +602,11 @@ fun main() {
         }
         evidence["comparison"] = "PASS"
 
-        evidence["result"] = "PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE"
+        evidence["result"] = "GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_CAPABLE"
         evidence["failure.stage"] = "none"
         writeEvidence(resultFile, evidence)
 
-        println("PERSISTENT_GRAPHITE_RENDER_TARGET_RESULT PASS")
+        println("GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_RESULT PASS")
         evidence.forEach { (key, value) -> println("$key=$value") }
     } catch (t: Throwable) {
         evidence["result"] = "FAIL"
@@ -536,10 +614,25 @@ fun main() {
         evidence["failure.type"] = t::class.qualifiedName ?: t::class.simpleName.orEmpty()
         evidence["failure.message"] = sanitize(t.message ?: "no message")
         writeEvidence(resultFile, evidence)
-        println("PERSISTENT_GRAPHITE_RENDER_TARGET_RESULT FAIL stage=$stage")
+        println("GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_RESULT FAIL stage=$stage")
         throw t
     } finally {
         prepared?.registration?.dispose()
+    }
+}
+
+private fun renderSyntheticPaintFailure(width: Int, height: Int) {
+    Surface.makeRasterN32Premul(width, height).use { surface ->
+        surface.canvas.clear(WHITE)
+        paintDesktopPlot(
+            canvas = surface.canvas,
+            width = width,
+            height = height,
+            density = BRIDGE_DENSITY,
+            plotPosition = DoubleVector(PLOT_X, PLOT_Y)
+        ) {
+            throw SyntheticProbeFailure("synthetic-paint-failure")
+        }
     }
 }
 
