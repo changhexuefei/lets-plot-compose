@@ -1,8 +1,8 @@
 package probe
 
+import org.jetbrains.letsPlot.commons.geometry.DoubleVector
 import org.jetbrains.letsPlot.commons.values.Color as LpColor
 import org.jetbrains.letsPlot.compose.canvas.SkiaContext2d
-import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
 import org.jetbrains.letsPlot.core.canvas.Font
 import org.jetbrains.letsPlot.core.canvas.FontWeight
 import org.jetbrains.skia.Bitmap
@@ -43,6 +43,7 @@ import org.lwjgl.vulkan.VkSubmitInfo
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
+import java.lang.reflect.InvocationTargetException
 import kotlin.math.abs
 
 private const val WIDTH = 640
@@ -79,6 +80,9 @@ fun main() {
         "schema" to "1",
         "probe.type" to "graphite-canvas-rendering",
         "adapter" to "SkiaContext2d",
+        "bridge.entry" to "DesktopSkiaPaintBridgeKt.paintOnSkiaCanvas",
+        "bridge.software" to "REQUESTED",
+        "bridge.graphite" to "REQUESTED",
         "platform" to System.getProperty("os.name"),
         "java.version" to System.getProperty("java.version"),
         "skiko.version" to (System.getenv("GRAPHITE_SKIKO_VERSION") ?: "unknown"),
@@ -102,6 +106,7 @@ fun main() {
 
         stage = "software-render"
         val softwarePixels = renderSoftware(softwarePng)
+        evidence["bridge.software"] = "PASS"
         val softwareMetrics = assertSceneStructure("software", softwarePixels)
         evidence.putAll(softwareMetrics)
         evidence["software.baseline"] = "PASS"
@@ -169,8 +174,9 @@ fun main() {
 
                         surface.use {
                             evidence["graphite.surface"] = "CREATED"
-                            stage = "graphite-skia-context2d"
-                            drawSceneWithLetsPlotAdapter(surface)
+                            stage = "graphite-frontend-paint-bridge"
+                            paintSceneThroughFrontendBridge(surface)
+                            evidence["bridge.graphite"] = "PASS"
                             evidence["graphite.skiaContext2d"] = "PAINTED"
 
                             stage = "graphite-submit"
@@ -232,7 +238,7 @@ fun main() {
 
 private fun renderSoftware(png: File): IntArray {
     Surface.makeRasterN32Premul(WIDTH, HEIGHT).use { surface ->
-        drawSceneWithLetsPlotAdapter(surface)
+        paintSceneThroughFrontendBridge(surface)
         surface.makeImageSnapshot().use { image ->
             Bitmap.makeFromImage(image).use { bitmap ->
                 val pixels = IntArray(WIDTH * HEIGHT)
@@ -248,9 +254,31 @@ private fun renderSoftware(png: File): IntArray {
     }
 }
 
-private fun drawSceneWithLetsPlotAdapter(surface: Surface) {
-    val ctx = SkiaContext2d(surface.canvas, SkiaFontManager.DEFAULT)
+private fun paintSceneThroughFrontendBridge(surface: Surface) {
+    val bridgeClass = Class.forName("org.jetbrains.letsPlot.compose.DesktopSkiaPaintBridgeKt")
+    val bridgeMethod = bridgeClass.declaredMethods.singleOrNull { method ->
+        method.name == "paintOnSkiaCanvas" && method.parameterCount == 4
+    } ?: error(
+        "Desktop Skia paint bridge JVM entry was not found. Available methods: " +
+            bridgeClass.declaredMethods.joinToString { it.name + "/" + it.parameterCount }
+    )
+    bridgeMethod.isAccessible = true
+
+    val painter: (SkiaContext2d) -> Unit = { context -> drawScene(context) }
     try {
+        bridgeMethod.invoke(
+            null,
+            surface.canvas,
+            1.0,
+            DoubleVector(0.0, 0.0),
+            painter
+        )
+    } catch (t: InvocationTargetException) {
+        throw (t.targetException ?: t)
+    }
+}
+
+private fun drawScene(ctx: SkiaContext2d) {
         ctx.setFillStyle(LpColor.WHITE)
         ctx.fillRect(0.0, 0.0, WIDTH.toDouble(), HEIGHT.toDouble())
 
@@ -298,11 +326,8 @@ private fun drawSceneWithLetsPlotAdapter(surface: Surface) {
         ctx.fillText("SOFTWARE vs Graphite", 78.0, 52.0)
         ctx.fillText("X axis", 300.0, 382.0)
         ctx.fillText("Y", 44.0, 194.0)
-        ctx.fillText("0", 62.0, 360.0)
-        ctx.fillText("5", 550.0, 360.0)
-    } finally {
-        ctx.dispose()
-    }
+    ctx.fillText("0", 62.0, 360.0)
+    ctx.fillText("5", 550.0, 360.0)
 }
 
 private fun assertSceneStructure(prefix: String, pixels: IntArray): Map<String, String> {
