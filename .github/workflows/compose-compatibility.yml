@@ -935,6 +935,7 @@ jobs:
           name: lets-plot-compose-recompiled-maven-${{ github.sha }}
           path: compose/.maven-publish-dev-repo
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
   windows-graphite-canvas-rendering-probe:
