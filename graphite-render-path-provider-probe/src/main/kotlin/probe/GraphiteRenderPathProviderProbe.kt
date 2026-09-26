@@ -347,6 +347,8 @@ fun main() {
 
             stage = "provider-render-first-frame"
             compositedPixels = renderViaSelectedProvider(prepared.drawable)
+            evidence["effective.path"] = DesktopRenderPath.OFFSCREEN_COMPOSITE.name
+            evidence["plot.drawable.paint"] = "PASS"
             savePixels(compositedPixels, compositedPng)
 
             stage = "provider-render-second-frame"
