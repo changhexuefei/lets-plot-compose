@@ -19,6 +19,8 @@ internal enum class DesktopRenderPath {
 internal fun interface DesktopOffscreenRenderer {
     fun paint(
         targetCanvas: Canvas,
+        width: Int,
+        height: Int,
         density: Double,
         plotPosition: DoubleVector,
         paint: (SkiaContext2d) -> Unit
@@ -48,21 +50,26 @@ internal fun resolveDesktopRenderPath(
  * The default remains Compose's native Skia canvas. The offscreen path is
  * intentionally provider-driven so the production frontend does not acquire a
  * hard dependency on Graphite/Vulkan. If the experimental path is requested
- * but no provider is installed, painting safely falls back to nativeCanvas.
+ * but no provider is installed, or the target size is not drawable yet,
+ * painting safely falls back to nativeCanvas.
  *
  * Returns the effective path used for this frame.
  */
 internal fun paintDesktopPlot(
     canvas: Canvas,
+    width: Int,
+    height: Int,
     density: Double,
     plotPosition: DoubleVector,
     requestedPath: DesktopRenderPath = resolveDesktopRenderPath(),
     paint: (SkiaContext2d) -> Unit
 ): DesktopRenderPath {
-    if (requestedPath == DesktopRenderPath.OFFSCREEN_COMPOSITE) {
+    if (requestedPath == DesktopRenderPath.OFFSCREEN_COMPOSITE && width > 0 && height > 0) {
         DesktopOffscreenRendererRegistry.renderer?.let { renderer ->
             renderer.paint(
                 targetCanvas = canvas,
+                width = width,
+                height = height,
                 density = density,
                 plotPosition = plotPosition,
                 paint = paint
