@@ -87,7 +87,7 @@ fun PlotPanelComposeCanvas(
         DefaultFigureToolsController(
             figure = figureModel,
             errorMessageHandler = { message ->
-                LOG.error { "Figure interaction error: $message" }
+                LOG.info { "Figure interaction error: $message" }
             }
         )
     }
