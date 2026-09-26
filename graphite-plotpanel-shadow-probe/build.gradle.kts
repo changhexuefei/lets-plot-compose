@@ -53,3 +53,26 @@ tasks.named<JavaExec>("run") {
     environment("GRAPHITE_SKIKO_VERSION", skikoVersion.get())
     environment("GRAPHITE_LWJGL_VERSION", lwjglVersion.get())
 }
+
+val performanceRuntimeClasspath = sourceSets["main"].runtimeClasspath
+
+fun JavaExec.configurePerformanceEvidence(renderPath: String) {
+    group = "verification"
+    description = "Runs real PlotPanel $renderPath performance evidence"
+    classpath = performanceRuntimeClasspath
+    mainClass.set("probe.PlotPanelPerformanceProbeKt")
+    systemProperty("java.awt.headless", "false")
+    systemProperty("skiko.renderApi", "SOFTWARE")
+    environment("PLOT_PERF_RENDER_PATH", renderPath)
+    environment("PLOT_PERFORMANCE_OUTPUT_DIR", layout.buildDirectory.dir("performance").get().asFile.absolutePath)
+    environment("GRAPHITE_SKIKO_VERSION", skikoVersion.get())
+    environment("GRAPHITE_LWJGL_VERSION", lwjglVersion.get())
+}
+
+tasks.register<JavaExec>("runPerformanceNative") {
+    configurePerformanceEvidence("native")
+}
+
+tasks.register<JavaExec>("runPerformanceGraphite") {
+    configurePerformanceEvidence("graphite")
+}
