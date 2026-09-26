@@ -11,9 +11,11 @@ import kotlinx.coroutines.delay
 import org.jetbrains.letsPlot.Figure
 import org.jetbrains.letsPlot.commons.geometry.DoubleVector
 import org.jetbrains.letsPlot.commons.registration.Registration
+import org.jetbrains.letsPlot.compose.PlotFigureModel
 import org.jetbrains.letsPlot.compose.PlotPanel
 import org.jetbrains.letsPlot.compose.canvas.SkiaContext2d
 import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
+import org.jetbrains.letsPlot.core.interact.InteractionSpec
 import org.jetbrains.letsPlot.geom.geomPoint
 import org.jetbrains.letsPlot.letsPlot
 import org.jetbrains.skia.Bitmap
@@ -54,6 +56,7 @@ import org.lwjgl.vulkan.VkQueueFamilyProperties
 import org.lwjgl.vulkan.VkSubmitInfo
 import java.awt.Rectangle
 import java.awt.Robot
+import java.awt.event.InputEvent
 import java.awt.image.BufferedImage
 import java.io.File
 import java.lang.reflect.Proxy
@@ -319,11 +322,13 @@ fun main() {
 
     val resultFile = outputDir.resolve("graphite-plotpanel-shadow.txt")
     val initialScreenshot = outputDir.resolve("plotpanel-graphite-initial.png")
+    val wheelZoomScreenshot = outputDir.resolve("plotpanel-graphite-wheel-zoom.png")
+    val dragPanScreenshot = outputDir.resolve("plotpanel-graphite-drag-pan.png")
     val resizedScreenshot = outputDir.resolve("plotpanel-graphite-resized.png")
 
     val evidence = linkedMapOf(
         "schema" to "1",
-        "probe.type" to "compose-plotpanel-persistent-graphite-shadow",
+        "probe.type" to "compose-plotpanel-interaction-regression",
         "compose.version" to "1.13.0-alpha01",
         "skiko.version" to (System.getenv("GRAPHITE_SKIKO_VERSION") ?: "unknown"),
         "lwjgl.version" to (System.getenv("GRAPHITE_LWJGL_VERSION") ?: "unknown"),
@@ -332,6 +337,7 @@ fun main() {
         "provider.binding" to "INTERNAL_REGISTRY_REFLECTION",
         "provider.packaging" to "PROBE_ONLY",
         "renderer.adoption" to "SHADOW_OPT_IN_ONLY",
+        "interaction.input" to "AWT_ROBOT_REAL_WINDOW",
         "public.api.change" to "NONE"
     )
 
@@ -352,12 +358,12 @@ fun main() {
     }
 
     Thread({
-        Thread.sleep(45_000)
+        Thread.sleep(60_000)
         if (completed.compareAndSet(false, true)) {
             evidence["result"] = "FAIL"
             evidence["failure.stage"] = "watchdog"
             evidence["failure.type"] = "TIMEOUT"
-            evidence["failure.message"] = "PlotPanel Graphite shadow probe did not complete within 45 seconds"
+            evidence["failure.message"] = "PlotPanel interaction regression probe did not complete within 60 seconds"
             writeEvidence(resultFile, evidence)
             exitProcess(43)
         }
@@ -391,7 +397,20 @@ fun main() {
         System.setProperty(DESKTOP_RENDER_PATH_PROPERTY, "graphite-offscreen")
 
         val figure = createFigure()
+        val figureModel = PlotFigureModel().apply {
+            setDefaultInteractions(
+                listOf(
+                    InteractionSpec(InteractionSpec.Name.WHEEL_ZOOM),
+                    InteractionSpec(InteractionSpec.Name.DRAG_PAN)
+                )
+            )
+        }
+        evidence["interaction.default.wheel_zoom"] = "ENABLED"
+        evidence["interaction.default.drag_pan"] = "ENABLED"
+
         var initialBaseline: BackendSnapshot? = null
+        var wheelZoomObserved = false
+        var dragPanObserved = false
         var resizedObserved = false
 
         application(exitProcessOnExit = false) {
@@ -408,6 +427,7 @@ fun main() {
 
                 PlotPanel(
                     figure = figure,
+                    figureModel = figureModel,
                     modifier = Modifier.fillMaxSize(),
                     computationMessagesHandler = {}
                 )
@@ -424,6 +444,54 @@ fun main() {
                     captureWindow(composeWindow, initialScreenshot)
                     assertScreenshotHasPlot(initialScreenshot)
                     evidence["compose.plotpanel.initial_capture"] = "PASS"
+
+                    val initialOverrideSignature = specOverrideSignature(figureModel)
+                    val wheelBaseline = backend.snapshot()
+
+                    performWheelZoom(composeWindow)
+                    evidence["interaction.wheel_zoom.robot"] = "PASS"
+
+                    val wheelSnapshot = waitForInteractionStateChange(
+                        backend = backend,
+                        figureModel = figureModel,
+                        previousSignature = initialOverrideSignature,
+                        baselineFrames = wheelBaseline.successfulFrames,
+                        interactionName = "wheel zoom"
+                    )
+                    wheelZoomObserved = true
+                    evidence["interaction.wheel_zoom.state_change"] = "PASS"
+                    evidence["interaction.wheel_zoom.repaint"] = "PASS"
+                    evidence["interaction.wheel_zoom.override_count"] =
+                        figureModel.specOverrideState.value.specOverrides.size.toString()
+
+                    delay(250)
+                    captureWindow(composeWindow, wheelZoomScreenshot)
+                    assertScreenshotHasPlot(wheelZoomScreenshot)
+                    evidence["interaction.wheel_zoom.capture"] = "PASS"
+
+                    val wheelOverrideSignature = specOverrideSignature(figureModel)
+                    val panBaseline = wheelSnapshot
+
+                    performDragPan(composeWindow)
+                    evidence["interaction.drag_pan.robot"] = "PASS"
+
+                    val panSnapshot = waitForInteractionStateChange(
+                        backend = backend,
+                        figureModel = figureModel,
+                        previousSignature = wheelOverrideSignature,
+                        baselineFrames = panBaseline.successfulFrames,
+                        interactionName = "drag pan"
+                    )
+                    dragPanObserved = true
+                    evidence["interaction.drag_pan.state_change"] = "PASS"
+                    evidence["interaction.drag_pan.repaint"] = "PASS"
+                    evidence["interaction.drag_pan.override_count"] =
+                        figureModel.specOverrideState.value.specOverrides.size.toString()
+
+                    delay(250)
+                    captureWindow(composeWindow, dragPanScreenshot)
+                    assertScreenshotHasPlot(dragPanScreenshot)
+                    evidence["interaction.drag_pan.capture"] = "PASS"
 
                     composeWindow.setSize(RESIZED_WINDOW_WIDTH, RESIZED_WINDOW_HEIGHT)
 
@@ -454,6 +522,10 @@ fun main() {
                     evidence["render_target.reuse"] = "PASS"
                     evidence["render_target.resize"] = "PASS"
                     evidence["image.layout.reuse_transition"] = "PASS"
+                    check(figureModel.specOverrideState.value.specOverrides.isNotEmpty()) {
+                        "Plot interaction overrides were lost after resize"
+                    }
+                    evidence["interaction.state.after_resize"] = "PRESERVED"
                     evidence["compose.recomposition.after_resize"] = "PASS"
 
                     exitApplication()
@@ -462,7 +534,12 @@ fun main() {
         }
 
         check(initialBaseline != null) { "Initial PlotPanel baseline was not captured" }
+        check(wheelZoomObserved) { "Wheel zoom interaction phase did not complete" }
+        check(dragPanObserved) { "Drag pan interaction phase did not complete" }
         check(resizedObserved) { "PlotPanel resize phase did not complete" }
+
+        figureModel.dispose()
+        evidence["figure_model.dispose"] = "PASS"
 
         registration.dispose()
         registration = null
@@ -488,12 +565,13 @@ fun main() {
         evidence["persistent.context.lifecycle"] = "PASS"
         evidence["persistent.render_target.lifecycle"] = "PASS"
         evidence["compose.plotpanel.dispose"] = "PASS"
-        evidence["result"] = "COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW_CAPABLE"
+        evidence["interaction.regression"] = "PASS"
+        evidence["result"] = "COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_CAPABLE"
         evidence["failure.stage"] = "none"
         writeEvidence(resultFile, evidence)
 
         completed.set(true)
-        println("COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW_RESULT PASS")
+        println("COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_RESULT PASS")
         evidence.forEach { (key, value) -> println("$key=$value") }
     } catch (t: Throwable) {
         evidence["result"] = "FAIL"
@@ -511,6 +589,76 @@ fun main() {
 
         registration?.dispose()
     }
+}
+
+private fun specOverrideSignature(figureModel: PlotFigureModel): String =
+    figureModel.specOverrideState.value.specOverrides.toString()
+
+private suspend fun waitForInteractionStateChange(
+    backend: PersistentGraphiteShadowBackend,
+    figureModel: PlotFigureModel,
+    previousSignature: String,
+    baselineFrames: Int,
+    interactionName: String
+): BackendSnapshot {
+    repeat(160) {
+        val snapshot = backend.snapshot()
+        val currentSignature = specOverrideSignature(figureModel)
+        if (
+            currentSignature != previousSignature &&
+            figureModel.specOverrideState.value.specOverrides.isNotEmpty() &&
+            snapshot.successfulFrames > baselineFrames
+        ) {
+            return snapshot
+        }
+        delay(100)
+    }
+    error("PlotPanel $interactionName did not mutate spec override state and repaint")
+}
+
+private suspend fun performWheelZoom(window: java.awt.Window) {
+    val robot = Robot(window.graphicsConfiguration.device).apply { autoDelay = 60 }
+    window.toFront()
+    delay(200)
+
+    val location = window.locationOnScreen
+    val size = window.size
+    val x = location.x + size.width / 2
+    val y = location.y + size.height / 2
+
+    robot.mouseMove(x, y)
+    repeat(3) {
+        robot.mouseWheel(-1)
+        delay(100)
+    }
+}
+
+private suspend fun performDragPan(window: java.awt.Window) {
+    val robot = Robot(window.graphicsConfiguration.device).apply { autoDelay = 40 }
+    window.toFront()
+    delay(150)
+
+    val location = window.locationOnScreen
+    val size = window.size
+    val startX = location.x + size.width / 2
+    val startY = location.y + size.height / 2
+    val endX = startX + minOf(120, size.width / 5)
+    val endY = startY + minOf(70, size.height / 7)
+
+    robot.mouseMove(startX, startY)
+    robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
+    try {
+        val steps = 8
+        for (step in 1..steps) {
+            val x = startX + (endX - startX) * step / steps
+            val y = startY + (endY - startY) * step / steps
+            robot.mouseMove(x, y)
+            delay(60)
+        }
+    } finally {
+        robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
+    }
+    delay(150)
 }
 
 private suspend fun waitForStableFrames(backend: PersistentGraphiteShadowBackend): BackendSnapshot {

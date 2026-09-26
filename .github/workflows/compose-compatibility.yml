@@ -2274,20 +2274,22 @@ jobs:
             "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
             clean run --stacktrace
 
-      - name: Verify PlotPanel persistent Graphite shadow contract
+      - name: Verify PlotPanel Graphite interaction regression contract
         shell: pwsh
         run: |
           $result = "compose\graphite-plotpanel-shadow-probe\build\probe\graphite-plotpanel-shadow.txt"
           $initial = "compose\graphite-plotpanel-shadow-probe\build\probe\plotpanel-graphite-initial.png"
+          $wheel = "compose\graphite-plotpanel-shadow-probe\build\probe\plotpanel-graphite-wheel-zoom.png"
+          $pan = "compose\graphite-plotpanel-shadow-probe\build\probe\plotpanel-graphite-drag-pan.png"
           $resized = "compose\graphite-plotpanel-shadow-probe\build\probe\plotpanel-graphite-resized.png"
 
-          foreach ($file in @($result, $initial, $resized)) {
+          foreach ($file in @($result, $initial, $wheel, $pan, $resized)) {
             if (!(Test-Path $file)) { throw "PlotPanel Graphite shadow evidence missing: $file" }
           }
 
           Get-Content $result
           foreach ($pattern in @(
-            '^result=COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW_CAPABLE$',
+            '^result=COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_CAPABLE$',
             '^compose\.plotpanel\.production_artifact=PASS$',
             '^production\.renderer\.default=NATIVE_CANVAS$',
             '^feature_flag\.value=graphite-offscreen$',
@@ -2297,6 +2299,20 @@ jobs:
             '^compose\.plotpanel=PASS$',
             '^compose\.plotpanel\.render_path=OFFSCREEN_COMPOSITE$',
             '^compose\.plotpanel\.initial_capture=PASS$',
+            '^interaction\.input=AWT_ROBOT_REAL_WINDOW$',
+            '^interaction\.default\.wheel_zoom=ENABLED$',
+            '^interaction\.default\.drag_pan=ENABLED$',
+            '^interaction\.wheel_zoom\.robot=PASS$',
+            '^interaction\.wheel_zoom\.state_change=PASS$',
+            '^interaction\.wheel_zoom\.repaint=PASS$',
+            '^interaction\.wheel_zoom\.capture=PASS$',
+            '^interaction\.wheel_zoom\.override_count=[1-9][0-9]*$',
+            '^interaction\.drag_pan\.robot=PASS$',
+            '^interaction\.drag_pan\.state_change=PASS$',
+            '^interaction\.drag_pan\.repaint=PASS$',
+            '^interaction\.drag_pan\.capture=PASS$',
+            '^interaction\.drag_pan\.override_count=[1-9][0-9]*$',
+            '^interaction\.state\.after_resize=PRESERVED$',
             '^compose\.plotpanel\.resize=PASS$',
             '^compose\.plotpanel\.resized_capture=PASS$',
             '^compose\.recomposition\.after_resize=PASS$',
@@ -2304,11 +2320,13 @@ jobs:
             '^render_target\.reuse=PASS$',
             '^render_target\.resize=PASS$',
             '^image\.layout\.reuse_transition=PASS$',
+            '^figure_model\.dispose=PASS$',
             '^provider\.registration\.dispose=PASS$',
             '^provider\.dispose_count=1$',
             '^persistent\.context\.lifecycle=PASS$',
             '^persistent\.render_target\.lifecycle=PASS$',
             '^compose\.plotpanel\.dispose=PASS$',
+            '^interaction\.regression=PASS$',
             '^provider\.packaging=PROBE_ONLY$',
             '^renderer\.adoption=SHADOW_OPT_IN_ONLY$',
             '^public\.api\.change=NONE$'
@@ -2318,7 +2336,7 @@ jobs:
             }
           }
 
-      - name: Upload PlotPanel persistent Graphite shadow evidence
+      - name: Upload PlotPanel Graphite interaction regression evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -2326,6 +2344,8 @@ jobs:
           path: |
             compose/graphite-plotpanel-shadow-probe/build/probe/graphite-plotpanel-shadow.txt
             compose/graphite-plotpanel-shadow-probe/build/probe/plotpanel-graphite-initial.png
+            compose/graphite-plotpanel-shadow-probe/build/probe/plotpanel-graphite-wheel-zoom.png
+            compose/graphite-plotpanel-shadow-probe/build/probe/plotpanel-graphite-drag-pan.png
             compose/graphite-plotpanel-shadow-probe/build/probe/plotpanel-graphite-resized.png
             compose/graphite-plotpanel-shadow-probe/build/probe/graphite-plotpanel-shadow-dependencies.txt
             compose/graphite-plotpanel-shadow-probe/build/probe/windows-vulkan-environment.txt
@@ -2560,7 +2580,7 @@ jobs:
           require_line "$graphite_provider" "provider.packaging=PROBE_ONLY"
           require_line "$graphite_provider" "renderer.adoption=OPT_IN_ONLY"
 
-          require_line "$plotpanel_shadow" "result=COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW_CAPABLE"
+          require_line "$plotpanel_shadow" "result=COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_CAPABLE"
           require_line "$plotpanel_shadow" "compose.plotpanel.production_artifact=PASS"
           require_line "$plotpanel_shadow" "production.renderer.default=NATIVE_CANVAS"
           require_line "$plotpanel_shadow" "feature_flag.value=graphite-offscreen"
@@ -2570,6 +2590,18 @@ jobs:
           require_line "$plotpanel_shadow" "compose.plotpanel=PASS"
           require_line "$plotpanel_shadow" "compose.plotpanel.render_path=OFFSCREEN_COMPOSITE"
           require_line "$plotpanel_shadow" "compose.plotpanel.initial_capture=PASS"
+          require_line "$plotpanel_shadow" "interaction.input=AWT_ROBOT_REAL_WINDOW"
+          require_line "$plotpanel_shadow" "interaction.default.wheel_zoom=ENABLED"
+          require_line "$plotpanel_shadow" "interaction.default.drag_pan=ENABLED"
+          require_line "$plotpanel_shadow" "interaction.wheel_zoom.robot=PASS"
+          require_line "$plotpanel_shadow" "interaction.wheel_zoom.state_change=PASS"
+          require_line "$plotpanel_shadow" "interaction.wheel_zoom.repaint=PASS"
+          require_line "$plotpanel_shadow" "interaction.wheel_zoom.capture=PASS"
+          require_line "$plotpanel_shadow" "interaction.drag_pan.robot=PASS"
+          require_line "$plotpanel_shadow" "interaction.drag_pan.state_change=PASS"
+          require_line "$plotpanel_shadow" "interaction.drag_pan.repaint=PASS"
+          require_line "$plotpanel_shadow" "interaction.drag_pan.capture=PASS"
+          require_line "$plotpanel_shadow" "interaction.state.after_resize=PRESERVED"
           require_line "$plotpanel_shadow" "compose.plotpanel.resize=PASS"
           require_line "$plotpanel_shadow" "compose.plotpanel.resized_capture=PASS"
           require_line "$plotpanel_shadow" "compose.recomposition.after_resize=PASS"
@@ -2577,11 +2609,13 @@ jobs:
           require_line "$plotpanel_shadow" "render_target.reuse=PASS"
           require_line "$plotpanel_shadow" "render_target.resize=PASS"
           require_line "$plotpanel_shadow" "image.layout.reuse_transition=PASS"
+          require_line "$plotpanel_shadow" "figure_model.dispose=PASS"
           require_line "$plotpanel_shadow" "provider.registration.dispose=PASS"
           require_line "$plotpanel_shadow" "provider.dispose_count=1"
           require_line "$plotpanel_shadow" "persistent.context.lifecycle=PASS"
           require_line "$plotpanel_shadow" "persistent.render_target.lifecycle=PASS"
           require_line "$plotpanel_shadow" "compose.plotpanel.dispose=PASS"
+          require_line "$plotpanel_shadow" "interaction.regression=PASS"
           require_line "$plotpanel_shadow" "provider.packaging=PROBE_ONLY"
           require_line "$plotpanel_shadow" "renderer.adoption=SHADOW_OPT_IN_ONLY"
           require_line "$plotpanel_shadow" "public.api.change=NONE"
@@ -2592,7 +2626,7 @@ jobs:
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=COMPOSE_PLOTPANEL_PERSISTENT_GRAPHITE_SHADOW_CAPABLE
+          result=COMPOSE_PLOTPANEL_INTERACTION_REGRESSION_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2603,8 +2637,15 @@ jobs:
           graphite.paint_bridge=PASS
           plotpanel.integration=PERSISTENT_GRAPHITE_SHADOW
           plotpanel.production_artifact=PASS
+          plotpanel.interaction_input=AWT_ROBOT_REAL_WINDOW
+          plotpanel.wheel_zoom=PASS
+          plotpanel.drag_pan=PASS
+          plotpanel.interaction_state_change=PASS
+          plotpanel.interaction_repaint=PASS
+          plotpanel.interaction_state_after_resize=PRESERVED
           plotpanel.resize=PASS
           plotpanel.recomposition=PASS
+          plotpanel.figure_model_dispose=PASS
           plotpanel.dispose=PASS
           offscreen.composite=PASS
           offscreen.transfer=CPU_READBACK
@@ -2636,7 +2677,7 @@ jobs:
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=SHADOW_OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_INTERACTION_REGRESSION
+          next.required=COMPOSE_PLOTPANEL_INTERACTION_STRESS_REGRESSION
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
