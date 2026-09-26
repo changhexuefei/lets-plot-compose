@@ -6,12 +6,14 @@
 package org.jetbrains.letsPlot.compose
 
 import org.jetbrains.letsPlot.commons.geometry.DoubleVector
+import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.letsPlot.commons.values.Color
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Surface
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DesktopRenderPathTest {
@@ -32,55 +34,54 @@ class DesktopRenderPathTest {
 
     @Test
     fun missingOffscreenProviderFallsBackToNativeCanvas() {
-        val previous = DesktopOffscreenRendererRegistry.renderer
-        DesktopOffscreenRendererRegistry.renderer = null
-        try {
-            var painted = false
-            Surface.makeRasterN32Premul(32, 32).use { surface ->
-                val effective = paintDesktopPlot(
-                    canvas = surface.canvas,
-                    width = 32,
-                    height = 32,
-                    density = 1.0,
-                    plotPosition = DoubleVector.ZERO,
-                    requestedPath = DesktopRenderPath.OFFSCREEN_COMPOSITE
-                ) {
-                    painted = true
-                }
+        assertNull(DesktopOffscreenRendererRegistry.current())
 
-                assertTrue(painted)
-                assertEquals(DesktopRenderPath.NATIVE_CANVAS, effective)
+        var painted = false
+        Surface.makeRasterN32Premul(32, 32).use { surface ->
+            val effective = paintDesktopPlot(
+                canvas = surface.canvas,
+                width = 32,
+                height = 32,
+                density = 1.0,
+                plotPosition = DoubleVector.ZERO,
+                requestedPath = DesktopRenderPath.OFFSCREEN_COMPOSITE
+            ) {
+                painted = true
             }
-        } finally {
-            DesktopOffscreenRendererRegistry.renderer = previous
+
+            assertTrue(painted)
+            assertEquals(DesktopRenderPath.NATIVE_CANVAS, effective)
         }
     }
 
     @Test
     fun installedOffscreenProviderReceivesTargetSizeAndOwnsPaintPath() {
-        val previous = DesktopOffscreenRendererRegistry.renderer
+        assertNull(DesktopOffscreenRendererRegistry.current())
+
         var providerInvoked = false
         var painterInvoked = false
         var observedWidth = -1
         var observedHeight = -1
 
-        DesktopOffscreenRendererRegistry.renderer = DesktopOffscreenRenderer {
-                targetCanvas,
-                width,
-                height,
-                density,
-                plotPosition,
-                paint ->
-            providerInvoked = true
-            observedWidth = width
-            observedHeight = height
-            paintOnSkiaCanvas(
-                canvas = targetCanvas,
-                density = density,
-                plotPosition = plotPosition,
-                paint = paint
-            )
-        }
+        val registration = DesktopOffscreenRendererRegistry.install(
+            DesktopOffscreenRenderer {
+                    targetCanvas,
+                    width,
+                    height,
+                    density,
+                    plotPosition,
+                    paint ->
+                providerInvoked = true
+                observedWidth = width
+                observedHeight = height
+                paintOnSkiaCanvas(
+                    canvas = targetCanvas,
+                    density = density,
+                    plotPosition = plotPosition,
+                    paint = paint
+                )
+            }
+        )
 
         try {
             Surface.makeRasterN32Premul(48, 36).use { surface ->
@@ -102,8 +103,47 @@ class DesktopRenderPathTest {
                 assertEquals(36, observedHeight)
             }
         } finally {
-            DesktopOffscreenRendererRegistry.renderer = previous
+            registration.dispose()
         }
+
+        assertNull(DesktopOffscreenRendererRegistry.current())
+    }
+
+    @Test
+    fun staleRegistrationCannotClearReplacementProvider() {
+        assertNull(DesktopOffscreenRendererRegistry.current())
+
+        var firstInvoked = false
+        var secondInvoked = false
+        val first = DesktopOffscreenRendererRegistry.install(
+            passthroughRenderer { firstInvoked = true }
+        )
+        val second = DesktopOffscreenRendererRegistry.install(
+            passthroughRenderer { secondInvoked = true }
+        )
+
+        try {
+            first.dispose()
+
+            Surface.makeRasterN32Premul(24, 24).use { surface ->
+                val effective = paintDesktopPlot(
+                    canvas = surface.canvas,
+                    width = 24,
+                    height = 24,
+                    density = 1.0,
+                    plotPosition = DoubleVector.ZERO,
+                    requestedPath = DesktopRenderPath.OFFSCREEN_COMPOSITE
+                ) {}
+
+                assertEquals(DesktopRenderPath.OFFSCREEN_COMPOSITE, effective)
+                assertTrue(!firstInvoked)
+                assertTrue(secondInvoked)
+            }
+        } finally {
+            second.dispose()
+        }
+
+        assertNull(DesktopOffscreenRendererRegistry.current())
     }
 
     @Test
@@ -135,31 +175,32 @@ class DesktopRenderPathTest {
     ): IntArray {
         val width = 96
         val height = 72
-        val previous = DesktopOffscreenRendererRegistry.renderer
+        var registration: Registration? = null
 
         if (installRasterProvider) {
-            DesktopOffscreenRendererRegistry.renderer = DesktopOffscreenRenderer {
-                    targetCanvas,
-                    targetWidth,
-                    targetHeight,
-                    density,
-                    plotPosition,
-                    paint ->
-                Surface.makeRasterN32Premul(targetWidth, targetHeight).use { offscreen ->
-                    offscreen.canvas.clear(0x00000000)
-                    paintOnSkiaCanvas(
-                        canvas = offscreen.canvas,
-                        density = density,
-                        plotPosition = plotPosition,
-                        paint = paint
-                    )
-                    offscreen.makeImageSnapshot().use { image ->
-                        targetCanvas.drawImage(image, 0f, 0f)
+            assertNull(DesktopOffscreenRendererRegistry.current())
+            registration = DesktopOffscreenRendererRegistry.install(
+                DesktopOffscreenRenderer {
+                        targetCanvas,
+                        targetWidth,
+                        targetHeight,
+                        density,
+                        plotPosition,
+                        paint ->
+                    Surface.makeRasterN32Premul(targetWidth, targetHeight).use { offscreen ->
+                        offscreen.canvas.clear(0x00000000)
+                        paintOnSkiaCanvas(
+                            canvas = offscreen.canvas,
+                            density = density,
+                            plotPosition = plotPosition,
+                            paint = paint
+                        )
+                        offscreen.makeImageSnapshot().use { image ->
+                            targetCanvas.drawImage(image, 0f, 0f)
+                        }
                     }
                 }
-            }
-        } else {
-            DesktopOffscreenRendererRegistry.renderer = null
+            )
         }
 
         try {
@@ -191,7 +232,19 @@ class DesktopRenderPathTest {
                 }
             }
         } finally {
-            DesktopOffscreenRendererRegistry.renderer = previous
+            registration?.dispose()
+        }
+    }
+
+    private fun passthroughRenderer(onInvoke: () -> Unit): DesktopOffscreenRenderer {
+        return DesktopOffscreenRenderer { targetCanvas, _, _, density, plotPosition, paint ->
+            onInvoke()
+            paintOnSkiaCanvas(
+                canvas = targetCanvas,
+                density = density,
+                plotPosition = plotPosition,
+                paint = paint
+            )
         }
     }
 
