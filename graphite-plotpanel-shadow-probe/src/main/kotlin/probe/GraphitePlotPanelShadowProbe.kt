@@ -514,23 +514,19 @@ fun main() {
 }
 
 private suspend fun waitForStableFrames(backend: PersistentGraphiteShadowBackend): BackendSnapshot {
-    var previous: BackendSnapshot? = null
     repeat(160) {
         val current = backend.snapshot()
-        if (current.successfulFrames >= 3 && current.width > 0 && current.height > 0) {
-            if (
-                previous != null &&
-                previous!!.width == current.width &&
-                previous!!.height == current.height &&
-                current.successfulFrames > previous!!.successfulFrames
-            ) {
-                return current
-            }
-            previous = current
+        if (
+            current.successfulFrames >= 2 &&
+            current.targetReuseCount >= 1 &&
+            current.width > 0 &&
+            current.height > 0
+        ) {
+            return current
         }
         delay(100)
     }
-    error("PlotPanel did not reach a stable Graphite frame")
+    error("PlotPanel did not produce two reusable Graphite frames")
 }
 
 private suspend fun waitForResizeFrames(
@@ -543,8 +539,9 @@ private suspend fun waitForResizeFrames(
             current.width > 0 &&
             current.height > 0 &&
             (current.width != baseline.width || current.height != baseline.height) &&
-            current.successfulFrames >= baseline.successfulFrames + 2 &&
-            current.targetCreateCount > baseline.targetCreateCount
+            current.successfulFrames > baseline.successfulFrames &&
+            current.targetCreateCount > baseline.targetCreateCount &&
+            current.targetResizeCount > baseline.targetResizeCount
         ) {
             return current
         }
