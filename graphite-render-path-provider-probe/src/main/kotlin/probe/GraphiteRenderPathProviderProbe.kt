@@ -535,19 +535,21 @@ fun main() {
             "Graphite provider registration did not release ownership"
         }
         evidence["provider.registration.dispose"] = "PASS"
-        check(evidence["provider.paint_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT).toString()) {
+        check(evidence["provider.paint_count"] == "23") {
             "Unexpected provider paint count: ${evidence["provider.paint_count"]}"
         }
+        check(evidence["successful_frame.count"] == "21")
+        check(evidence["failure_recovery.count"] == "2")
         check(evidence["graphite.context.create_count"] == "1") {
             "Persistent Graphite context was recreated: ${evidence["graphite.context.create_count"]}"
         }
-        check(evidence["graphite.context.reuse_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT - 1).toString()) {
+        check(evidence["graphite.context.reuse_count"] == "22") {
             "Persistent Graphite context reuse count is unexpected: ${evidence["graphite.context.reuse_count"]}"
         }
         check(evidence["render_target.create_count"] == "2") {
             "Persistent render target create count is unexpected: ${evidence["render_target.create_count"]}"
         }
-        check(evidence["render_target.reuse_count"] == (SAME_SIZE_FRAME_COUNT + RESIZED_FRAME_COUNT - 2).toString()) {
+        check(evidence["render_target.reuse_count"] == "20") {
             "Persistent render target reuse count is unexpected: ${evidence["render_target.reuse_count"]}"
         }
         check(evidence["render_target.resize_count"] == "1") {
@@ -561,6 +563,16 @@ fun main() {
         }
         check(evidence["render_target.resize"] == "PASS")
         check(evidence["render_target.final_dispose"] == "PASS")
+        check(evidence["failure.paint.injected"] == "PASS")
+        check(evidence["failure.paint.caught"] == "PASS")
+        check(evidence["failure.paint.target_preserved"] == "PASS")
+        check(evidence["failure.paint.layout_preserved"] == "PASS")
+        check(evidence["failure.paint.recovery"] == "PASS")
+        check(evidence["failure.resize.create.injected"] == "PASS")
+        check(evidence["failure.resize.target_released"] == "PASS")
+        check(evidence["failure.resize.caught"] == "PASS")
+        check(evidence["failure.resize.no_stale_target"] == "PASS")
+        check(evidence["failure.resize.recovery"] == "PASS")
         check(evidence["image.second_frame.layout_before_wrap"] == "TRANSFER_SRC_OPTIMAL") {
             "Second frame did not reuse the tracked readback layout: ${evidence["image.second_frame.layout_before_wrap"]}"
         }
@@ -590,11 +602,11 @@ fun main() {
         }
         evidence["comparison"] = "PASS"
 
-        evidence["result"] = "PERSISTENT_GRAPHITE_RENDER_TARGET_CAPABLE"
+        evidence["result"] = "GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_CAPABLE"
         evidence["failure.stage"] = "none"
         writeEvidence(resultFile, evidence)
 
-        println("PERSISTENT_GRAPHITE_RENDER_TARGET_RESULT PASS")
+        println("GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_RESULT PASS")
         evidence.forEach { (key, value) -> println("$key=$value") }
     } catch (t: Throwable) {
         evidence["result"] = "FAIL"
@@ -602,7 +614,7 @@ fun main() {
         evidence["failure.type"] = t::class.qualifiedName ?: t::class.simpleName.orEmpty()
         evidence["failure.message"] = sanitize(t.message ?: "no message")
         writeEvidence(resultFile, evidence)
-        println("PERSISTENT_GRAPHITE_RENDER_TARGET_RESULT FAIL stage=$stage")
+        println("GRAPHITE_RENDER_TARGET_FAILURE_RECOVERY_RESULT FAIL stage=$stage")
         throw t
     } finally {
         prepared?.registration?.dispose()
