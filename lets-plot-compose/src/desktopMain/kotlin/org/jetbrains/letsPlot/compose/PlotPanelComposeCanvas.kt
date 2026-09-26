@@ -231,7 +231,7 @@ fun PlotPanelComposeCanvas(
                     // this Canvas block whenever it changes.
                     redrawTrigger
 
-                    paintOnSkiaCanvas(
+                    paintDesktopPlot(
                         canvas = drawContext.canvas.nativeCanvas,
                         density = density.toDouble(),
                         plotPosition = plotPosition
