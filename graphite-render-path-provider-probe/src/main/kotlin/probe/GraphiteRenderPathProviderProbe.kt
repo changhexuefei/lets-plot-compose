@@ -495,6 +495,15 @@ fun main() {
         }
         check(evidence["render_target.resize"] == "PASS")
         check(evidence["render_target.final_dispose"] == "PASS")
+        check(evidence["image.second_frame.layout_before_wrap"] == "TRANSFER_SRC_OPTIMAL") {
+            "Second frame did not reuse the tracked readback layout: ${evidence["image.second_frame.layout_before_wrap"]}"
+        }
+        check(evidence["image.resize_first_frame.layout_before_wrap"] == "UNDEFINED") {
+            "Resized render target did not start from UNDEFINED layout: ${evidence["image.resize_first_frame.layout_before_wrap"]}"
+        }
+        check(evidence["image.layout.after_readback"] == "TRANSFER_SRC_OPTIMAL")
+        evidence["image.layout.reuse_transition"] = "PASS"
+        evidence["image.layout.resize_reset"] = "PASS"
         check(evidence["graphite.context.dispose"] == "PASS")
         check(evidence["vulkan.device.dispose"] == "PASS")
         evidence["provider.lifecycle"] = "PERSISTENT_CONTEXT_AND_RENDER_TARGET"
