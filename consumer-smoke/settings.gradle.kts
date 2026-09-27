@@ -36,6 +36,15 @@ dependencyResolutionManagement {
         localSmokeRepo("LETS_PLOT_KOTLIN_REPO")
         localSmokeRepo("LETS_PLOT_COMPOSE_REPO")
 
+        System.getenv("LETS_PLOT_GRAPHITE_RUNTIME_REPO")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { repoPath ->
+                maven {
+                    name = "LETS_PLOT_GRAPHITE_RUNTIME_REPO"
+                    url = uri(file(repoPath))
+                }
+            }
+
         mavenCentral()
         google()
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
