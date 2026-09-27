@@ -223,6 +223,34 @@ fun main() {
                                 (System.getProperty("letsplot.compose.graphite.runtime.backend") ?: "ABSENT")
                         )
                         appendLine(
+                            "graphite.runtime.compatibility=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.compatibility") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.compatibility.reason=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.compatibility.reason") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.compatibility.compose=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.compatibility.compose") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.compatibility.skiko=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.compatibility.skiko") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.compatibility.profile=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.compatibility.profile") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.compatibility.platform=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.compatibility.platform") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.compatibility.java=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.compatibility.java") ?: "ABSENT")
+                        )
+                        appendLine(
                             "desktop.offscreen.failure=" +
                                 (System.getProperty("letsplot.compose.desktop.offscreen.failure") ?: "ABSENT")
                         )

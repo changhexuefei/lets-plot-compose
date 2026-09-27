@@ -117,6 +117,8 @@ jobs:
           offscreen.provider_failure=QUARANTINE_AND_FALLBACK_NATIVE
           offscreen.provider_failure_dispose=ONCE
           offscreen.provider_failure_retry=SUPPRESSED
+          graphite.compatibility.production_eligible=FALSE
+          graphite.compatibility.production_profile=PRODUCTION_NATIVE_BASELINE
           public.api.change=NONE
           production.graphite_dependency=ABSENT
           renderer.adoption=NOT_STARTED
@@ -854,9 +856,25 @@ jobs:
         run: >
           .\gradlew.bat
           -I skiko-0.153-override.init.gradle
+          "-PletsPlot.graphite.compatibility.enabled=true"
+          "-PletsPlot.graphite.compatibility.skiko=$env:SMOKE_SKIKO_VERSION"
+          "-PletsPlot.graphite.compatibility.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153"
           :lets-plot-compose:clean
           :lets-plot-compose:publishDesktopPublicationToMavenLocalRepository
           --stacktrace
+
+      - name: Verify recompiled frontend Graphite compatibility marker
+        working-directory: compose
+        shell: pwsh
+        run: |
+          $desktopJar = Get-ChildItem ".maven-publish-dev-repo\org\jetbrains\lets-plot\lets-plot-compose-desktop" -Recurse -Filter "lets-plot-compose-desktop-*.jar" | Where-Object { $_.Name -notmatch 'javadoc|sources' } | Select-Object -First 1
+          if ($null -eq $desktopJar) { throw "Recompiled lets-plot-compose-desktop jar was not published" }
+          $report = "build\graphite-compatibility-marker.txt"
+          & javap -classpath $desktopJar.FullName -constants org.jetbrains.letsPlot.compose.DesktopGraphiteCompatibilityMarker | Set-Content -Path $report -Encoding UTF8
+          Get-Content $report
+          foreach ($pattern in @('ELIGIBLE = true','COMPOSE_VERSION = "1\.13\.0-alpha01"','COMPILE_SKIKO_VERSION = "0\.153\.0"','PROFILE = "WINDOWS_X64_JDK21_GRAPHITE_0_153"')) {
+            if (!(Select-String -Path $report -Pattern $pattern -Quiet)) { throw "Recompiled frontend Graphite compatibility marker mismatch: $pattern" }
+          }
 
       - name: Run full consumer smoke against recompiled frontend
         working-directory: compose
@@ -934,6 +952,10 @@ jobs:
             "compose.version=$env:SMOKE_COMPOSE_VERSION",
             "frontend.recompiled=true",
             "frontend.recompiled.skiko=$env:SMOKE_SKIKO_VERSION",
+            "frontend.graphite_compatibility_eligible=true",
+            "frontend.graphite_compatibility_profile=WINDOWS_X64_JDK21_GRAPHITE_0_153",
+            "frontend.graphite_compatibility_compose=$env:SMOKE_COMPOSE_VERSION",
+            "frontend.graphite_compatibility_skiko=$env:SMOKE_SKIKO_VERSION",
             "runtime.skiko=$env:SMOKE_SKIKO_VERSION",
             "runtime.skiko.artifact=skiko-awt-runtime-all",
             "graphite.runtime=NOT_INCLUDED",
@@ -964,6 +986,7 @@ jobs:
             compose/consumer-smoke/build/smoke/baseline-manifest.txt
             compose/consumer-smoke/build/smoke/renderer-dependencies.txt
             compose/build/skiko-0.153-frontend-dependencies.txt
+            compose/build/graphite-compatibility-marker.txt
             consumer-bundle/manifest.txt
             consumer-bundle/core-manifest.txt
           if-no-files-found: warn
@@ -2522,6 +2545,53 @@ jobs:
             "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
             clean publishRuntimeBundlePublicationToProbeRepository --stacktrace
 
+      - name: Verify Graphite runtime compatibility matrix
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          GRAPHITE_COMPATIBILITY_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-runtime-package-probe\build\compatibility
+        run: |
+          .\gradlew.bat -p graphite-runtime-package-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" graphiteRuntimeCompatibilityProbe --stacktrace
+          $manifest = "graphite-runtime-package-probe\build\compatibility\graphite-runtime-compatibility-matrix.txt"
+          if (!(Test-Path $manifest)) { throw "Graphite runtime compatibility matrix evidence was not created" }
+          foreach ($line in @(
+            'result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_COMPATIBILITY_GATE_EVIDENCE_CAPABLE',
+            'verified.os=Windows',
+            'verified.arch=x86_64',
+            'verified.jdk=21',
+            'verified.compose=1.13.0-alpha01',
+            'verified.skiko=0.153.0',
+            'verified.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153',
+            'verified.activation=ALLOW',
+            'unverified.activation=BLOCK',
+            'case.unsupported_os=UNSUPPORTED_OS',
+            'case.unsupported_arch=UNSUPPORTED_ARCH',
+            'case.unverified_java=UNVERIFIED_JAVA',
+            'case.marker_schema=FRONTEND_MARKER_SCHEMA_MISMATCH',
+            'case.frontend_not_ready=FRONTEND_NOT_GRAPHITE_READY',
+            'case.compose_mismatch=COMPOSE_VERSION_MISMATCH',
+            'case.skiko_mismatch=SKIKO_VERSION_MISMATCH',
+            'case.profile_mismatch=COMPATIBILITY_PROFILE_MISMATCH',
+            'production.renderer.default=NATIVE_CANVAS',
+            'renderer.adoption=EXPERIMENTAL_OPT_IN',
+            'public.api.change=NONE'
+          )) {
+            if (!(Select-String -Path $manifest -Pattern ("^" + [regex]::Escape($line) + "$") -Quiet)) {
+              Get-Content $manifest
+              throw "Graphite runtime compatibility evidence missing: $line"
+            }
+          }
+
+      - name: Upload Graphite runtime compatibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-runtime-compatibility-${{ github.sha }}
+          path: compose/graphite-runtime-package-probe/build/compatibility/graphite-runtime-compatibility-matrix.txt
+          if-no-files-found: error
+          retention-days: 90
       - name: Verify Graphite runtime packaging boundary
         working-directory: compose
         shell: pwsh
@@ -2731,7 +2801,13 @@ jobs:
             '^result=PASS$',
             '^desktop\.renderPath\.requested=graphite-offscreen$',
             '^graphite\.runtime\.activation=ACTIVE$',
-            '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$'
+            '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$',
+            '^graphite\.runtime\.compatibility=PASS$',
+            '^graphite\.runtime\.compatibility\.reason=VERIFIED_BASELINE$',
+            '^graphite\.runtime\.compatibility\.compose=1\.13\.0-alpha01$',
+            '^graphite\.runtime\.compatibility\.skiko=0\.153\.0$',
+            '^graphite\.runtime\.compatibility\.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153$',
+            '^graphite\.runtime\.compatibility\.java=21$'
           )) {
             Require-Pattern $optInSummary $pattern
           }
@@ -2741,6 +2817,12 @@ jobs:
             '^desktop\.renderPath\.requested=graphite-offscreen$',
             '^graphite\.runtime\.activation=ACTIVE$',
             '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$',
+            '^graphite\.runtime\.compatibility=PASS$',
+            '^graphite\.runtime\.compatibility\.reason=VERIFIED_BASELINE$',
+            '^graphite\.runtime\.compatibility\.compose=1\.13\.0-alpha01$',
+            '^graphite\.runtime\.compatibility\.skiko=0\.153\.0$',
+            '^graphite\.runtime\.compatibility\.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153$',
+            '^graphite\.runtime\.compatibility\.java=21$',
             '^desktop\.offscreen\.failure=java\.lang\.IllegalStateException$',
             '^desktop\.offscreen\.failureCount=1$',
             '^graphite\.runtime\.injectedFailure=TRIGGERED$',
@@ -2781,6 +2863,12 @@ jobs:
           missing_runtime.consumer_smoke=PASS
           opt_in_runtime.activation=ACTIVE
           opt_in_runtime.backend=PERSISTENT_GRAPHITE_VULKAN
+          opt_in_runtime.compatibility=PASS
+          opt_in_runtime.compatibility_reason=VERIFIED_BASELINE
+          opt_in_runtime.compatibility_compose=1.13.0-alpha01
+          opt_in_runtime.compatibility_skiko=0.153.0
+          opt_in_runtime.compatibility_profile=WINDOWS_X64_JDK21_GRAPHITE_0_153
+          opt_in_runtime.compatibility_jdk=21
           opt_in_runtime.consumer_smoke=PASS
           opt_in_runtime.full_interaction_smoke=PASS
           runtime.jar.bootstrap=PRESENT
@@ -2954,6 +3042,11 @@ jobs:
         with:
           name: graphite-runtime-provider-activation-${{ github.sha }}
           path: evidence/runtime-activation
+      - name: Download Graphite runtime compatibility evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-runtime-compatibility-${{ github.sha }}
+          path: evidence/runtime-compatibility
 
       - name: Verify Graphite frontend readiness chain
         shell: bash
@@ -2987,10 +3080,11 @@ jobs:
           runtime_packaging="$(find_one evidence/runtime-packaging graphite-runtime-packaging.txt)"
           runtime_activation="$(find_one evidence/runtime-activation graphite-runtime-provider-activation.txt)"
           runtime_failure="$(find_one evidence/runtime-activation graphite-runtime-failure-fallback.txt)"
+          runtime_compatibility="$(find_one evidence/runtime-compatibility graphite-runtime-compatibility-matrix.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n  runtime_packaging=%s\n  runtime_activation=%s\n  runtime_failure=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance" "$runtime_packaging" "$runtime_activation" "$runtime_failure"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n  runtime_packaging=%s\n  runtime_activation=%s\n  runtime_failure=%s\n  runtime_compatibility=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance" "$runtime_packaging" "$runtime_activation" "$runtime_failure" "$runtime_compatibility"
 
           require_line() {
             local file="$1"
@@ -3006,6 +3100,10 @@ jobs:
           require_line "$recompile" "probe.result=PASS"
           require_line "$recompile" "frontend.recompiled=true"
           require_line "$recompile" "frontend.recompiled.skiko=0.153.0"
+          require_line "$recompile" "frontend.graphite_compatibility_eligible=true"
+          require_line "$recompile" "frontend.graphite_compatibility_profile=WINDOWS_X64_JDK21_GRAPHITE_0_153"
+          require_line "$recompile" "frontend.graphite_compatibility_compose=1.13.0-alpha01"
+          require_line "$recompile" "frontend.graphite_compatibility_skiko=0.153.0"
           require_line "$recompile" "renderer.adoption=NOT_STARTED"
 
           require_line "$canvas" "result=CANVAS_RENDERING_CAPABLE"
@@ -3064,6 +3162,8 @@ jobs:
           require_line "$render_path" "offscreen.provider_failure=QUARANTINE_AND_FALLBACK_NATIVE"
           require_line "$render_path" "offscreen.provider_failure_dispose=ONCE"
           require_line "$render_path" "offscreen.provider_failure_retry=SUPPRESSED"
+          require_line "$render_path" "graphite.compatibility.production_eligible=FALSE"
+          require_line "$render_path" "graphite.compatibility.production_profile=PRODUCTION_NATIVE_BASELINE"
           require_line "$render_path" "public.api.change=NONE"
           require_line "$render_path" "production.graphite_dependency=ABSENT"
           require_line "$render_path" "renderer.adoption=NOT_STARTED"
@@ -3217,6 +3317,12 @@ jobs:
           require_line "$runtime_activation" "missing_runtime.consumer_smoke=PASS"
           require_line "$runtime_activation" "opt_in_runtime.activation=ACTIVE"
           require_line "$runtime_activation" "opt_in_runtime.backend=PERSISTENT_GRAPHITE_VULKAN"
+          require_line "$runtime_activation" "opt_in_runtime.compatibility=PASS"
+          require_line "$runtime_activation" "opt_in_runtime.compatibility_reason=VERIFIED_BASELINE"
+          require_line "$runtime_activation" "opt_in_runtime.compatibility_compose=1.13.0-alpha01"
+          require_line "$runtime_activation" "opt_in_runtime.compatibility_skiko=0.153.0"
+          require_line "$runtime_activation" "opt_in_runtime.compatibility_profile=WINDOWS_X64_JDK21_GRAPHITE_0_153"
+          require_line "$runtime_activation" "opt_in_runtime.compatibility_jdk=21"
           require_line "$runtime_activation" "opt_in_runtime.consumer_smoke=PASS"
           require_line "$runtime_activation" "opt_in_runtime.full_interaction_smoke=PASS"
           require_line "$runtime_activation" "runtime.jar.bootstrap=PRESENT"
@@ -3246,13 +3352,34 @@ jobs:
           require_line "$runtime_failure" "renderer.adoption=SHADOW_OPT_IN_ONLY"
           require_line "$runtime_failure" "public.api.change=NONE"
 
+          require_line "$runtime_compatibility" "result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_COMPATIBILITY_GATE_EVIDENCE_CAPABLE"
+          require_line "$runtime_compatibility" "verified.os=Windows"
+          require_line "$runtime_compatibility" "verified.arch=x86_64"
+          require_line "$runtime_compatibility" "verified.jdk=21"
+          require_line "$runtime_compatibility" "verified.compose=1.13.0-alpha01"
+          require_line "$runtime_compatibility" "verified.skiko=0.153.0"
+          require_line "$runtime_compatibility" "verified.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153"
+          require_line "$runtime_compatibility" "verified.activation=ALLOW"
+          require_line "$runtime_compatibility" "unverified.activation=BLOCK"
+          require_line "$runtime_compatibility" "case.unsupported_os=UNSUPPORTED_OS"
+          require_line "$runtime_compatibility" "case.unsupported_arch=UNSUPPORTED_ARCH"
+          require_line "$runtime_compatibility" "case.unverified_java=UNVERIFIED_JAVA"
+          require_line "$runtime_compatibility" "case.marker_schema=FRONTEND_MARKER_SCHEMA_MISMATCH"
+          require_line "$runtime_compatibility" "case.frontend_not_ready=FRONTEND_NOT_GRAPHITE_READY"
+          require_line "$runtime_compatibility" "case.compose_mismatch=COMPOSE_VERSION_MISMATCH"
+          require_line "$runtime_compatibility" "case.skiko_mismatch=SKIKO_VERSION_MISMATCH"
+          require_line "$runtime_compatibility" "case.profile_mismatch=COMPATIBILITY_PROFILE_MISMATCH"
+          require_line "$runtime_compatibility" "production.renderer.default=NATIVE_CANVAS"
+          require_line "$runtime_compatibility" "renderer.adoption=EXPERIMENTAL_OPT_IN"
+          require_line "$runtime_compatibility" "public.api.change=NONE"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE_CAPABLE
+          result=COMPOSE_PLOTPANEL_GRAPHITE_READINESS_BASELINE_COMPLETE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -3308,6 +3435,18 @@ jobs:
           graphite.runtime_failure_subsequent_native=PASS
           graphite.runtime_failure_gpu_cleanup=PASS
           graphite.runtime_failure_full_interaction_smoke=PASS
+          graphite.runtime_compatibility_gate=PASS
+          graphite.runtime_compatibility_verified_os=Windows
+          graphite.runtime_compatibility_verified_arch=x86_64
+          graphite.runtime_compatibility_verified_jdk=21
+          graphite.runtime_compatibility_verified_compose=1.13.0-alpha01
+          graphite.runtime_compatibility_verified_skiko=0.153.0
+          graphite.runtime_compatibility_verified_profile=WINDOWS_X64_JDK21_GRAPHITE_0_153
+          graphite.runtime_unverified_activation=BLOCK
+          graphite.production_frontend_eligible=FALSE
+          graphite.recompiled_frontend_eligible=TRUE
+          baseline.status=FROZEN
+          baseline.scope=WINDOWS_X64_JDK21_COMPOSE_1_13_0_ALPHA01_SKIKO_0_153_0
           plotpanel.resize=PASS
           plotpanel.recomposition=PASS
           plotpanel.figure_model_dispose=PASS
@@ -3341,8 +3480,9 @@ jobs:
           graphite.backend.dispose=PASS
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
-          renderer.adoption=SHADOW_OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_COMPATIBILITY_GATE_EVIDENCE
+          production.renderer.default=NATIVE_CANVAS
+          renderer.adoption=EXPERIMENTAL_OPT_IN
+          next.required=NONE_UNTIL_UPSTREAM_BASELINE_CHANGE
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF

@@ -14,6 +14,7 @@ import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -23,6 +24,17 @@ class DesktopRenderPathTest {
     fun resetOptionalRuntimeBootstrap() {
         DesktopOffscreenRuntimeBootstrap.resetForTests()
         DesktopOffscreenFailureState.resetForTests()
+    }
+
+    @Test
+    fun productionBuildDoesNotAdvertiseGraphiteCompatibility() {
+        assertFalse(DesktopGraphiteCompatibilityMarker.ELIGIBLE)
+        assertEquals("1.12.1", DesktopGraphiteCompatibilityMarker.COMPOSE_VERSION)
+        assertEquals("UNVERIFIED", DesktopGraphiteCompatibilityMarker.COMPILE_SKIKO_VERSION)
+        assertEquals(
+            "PRODUCTION_NATIVE_BASELINE",
+            DesktopGraphiteCompatibilityMarker.PROFILE
+        )
     }
 
     @Test

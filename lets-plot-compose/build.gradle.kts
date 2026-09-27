@@ -6,6 +6,7 @@
 @file:OptIn(ExperimentalWasmDsl::class)
 
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import java.io.File
 
 plugins {
     kotlin("multiplatform")
@@ -23,6 +24,64 @@ val kotlinxCoroutinesVersion = extra["kotlinx.coroutines.version"] as String
 val kotlinxDatetimeVersion = extra["kotlinx.datetime.version"] as String
 val kotlinxBrowserVersion = extra["kotlinx.browser.version"] as String
 val kotlinLoggingVersion = extra["kotlinLogging.version"] as String
+
+val graphiteCompatibilityEnabled =
+    providers.gradleProperty("letsPlot.graphite.compatibility.enabled").orElse("false")
+val graphiteCompatibilitySkikoVersion =
+    providers.gradleProperty("letsPlot.graphite.compatibility.skiko").orElse("UNVERIFIED")
+val graphiteCompatibilityProfile =
+    providers.gradleProperty("letsPlot.graphite.compatibility.profile")
+        .orElse("PRODUCTION_NATIVE_BASELINE")
+val composeVersionForCompatibility =
+    providers.gradleProperty("compose.version").orElse("UNVERIFIED")
+
+val graphiteCompatibilityGeneratedDir =
+    layout.buildDirectory.dir("generated/graphiteCompatibility/desktopMain/kotlin")
+
+val generateDesktopGraphiteCompatibilityMarker by tasks.registering {
+    inputs.property("graphiteCompatibilityEnabled", graphiteCompatibilityEnabled)
+    inputs.property("graphiteCompatibilitySkikoVersion", graphiteCompatibilitySkikoVersion)
+    inputs.property("graphiteCompatibilityProfile", graphiteCompatibilityProfile)
+    inputs.property("composeVersionForCompatibility", composeVersionForCompatibility)
+    outputs.dir(graphiteCompatibilityGeneratedDir)
+
+    doLast {
+        val outputDir = graphiteCompatibilityGeneratedDir.get().asFile
+        val outputFile = File(
+            outputDir,
+            "org/jetbrains/letsPlot/compose/DesktopGraphiteCompatibilityMarker.kt"
+        )
+        outputFile.parentFile.mkdirs()
+
+        val enabled = graphiteCompatibilityEnabled.get().equals("true", ignoreCase = true)
+        val composeVersion = composeVersionForCompatibility.get()
+        val skikoVersion = graphiteCompatibilitySkikoVersion.get()
+        val profile = graphiteCompatibilityProfile.get()
+
+        fun quoted(value: String): String =
+            value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+        outputFile.writeText(
+            """
+            |package org.jetbrains.letsPlot.compose
+            |
+            |/**
+            | * Build-time marker consumed only by the optional Graphite runtime bootstrap.
+            | *
+            | * Normal production builds intentionally publish ELIGIBLE=false. CI may opt in
+            | * only after verifying the exact Compose/Skiko compile classpath.
+            | */
+            |internal object DesktopGraphiteCompatibilityMarker {
+            |    const val SCHEMA: Int = 1
+            |    const val ELIGIBLE: Boolean = $enabled
+            |    const val COMPOSE_VERSION: String = "${quoted(composeVersion)}"
+            |    const val COMPILE_SKIKO_VERSION: String = "${quoted(skikoVersion)}"
+            |    const val PROFILE: String = "${quoted(profile)}"
+            |}
+            |""".trimMargin()
+        )
+    }
+}
 
 kotlin {
     jvm("desktop") {
@@ -59,6 +118,8 @@ kotlin {
         }
 
         named("desktopMain") {
+            kotlin.srcDir(graphiteCompatibilityGeneratedDir)
+
             dependencies {
                 compileOnly(compose.desktop.currentOs)
                 compileOnly(compose.components.resources)
@@ -97,6 +158,14 @@ kotlin {
         }
 
     }
+}
+
+tasks.matching { task ->
+    task.name == "compileKotlinDesktop" ||
+        task.name == "compileTestKotlinDesktop" ||
+        task.name == "desktopSourcesJar"
+}.configureEach {
+    dependsOn(generateDesktopGraphiteCompatibilityMarker)
 }
 
 android {

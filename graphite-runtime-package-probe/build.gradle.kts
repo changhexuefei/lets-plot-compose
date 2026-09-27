@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.JavaExec
+
 plugins {
     kotlin("jvm")
     `java-library`
@@ -40,6 +42,19 @@ dependencies {
     runtimeOnly("org.lwjgl:lwjgl:${lwjglVersion.get()}")
     runtimeOnly("org.lwjgl:lwjgl-vulkan:${lwjglVersion.get()}")
     runtimeOnly("org.lwjgl:lwjgl:${lwjglVersion.get()}:natives-windows")
+}
+
+tasks.register<JavaExec>("graphiteRuntimeCompatibilityProbe") {
+    group = "verification"
+    description = "Verifies the frozen Graphite runtime compatibility allow/block matrix."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set(
+        "org.jetbrains.letsPlot.compose.graphite.runtime.GraphiteRuntimeCompatibilityProbeKt"
+    )
+    environment(
+        "GRAPHITE_COMPATIBILITY_OUTPUT_DIR",
+        layout.buildDirectory.dir("compatibility").get().asFile.absolutePath
+    )
 }
 
 publishing {
