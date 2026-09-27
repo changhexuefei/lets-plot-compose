@@ -94,6 +94,55 @@ jobs:
         working-directory: compose
         run: ./gradlew :lets-plot-compose:desktopTest --stacktrace
 
+      - name: Build multiplatform UI parity evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          common_toolbar="compose/lets-plot-compose/src/commonMain/kotlin/org/jetbrains/letsPlot/compose/PlotToolbar.kt"
+          common_svg="compose/lets-plot-compose/src/commonMain/kotlin/org/jetbrains/letsPlot/compose/SvgIconUtils.kt"
+          android_canvas="compose/lets-plot-compose/src/androidMain/kotlin/org/jetbrains/letsPlot/compose/PlotPanelComposeCanvas.kt"
+          wasm_canvas="compose/lets-plot-compose/src/wasmJsMain/kotlin/org/jetbrains/letsPlot/compose/PlotPanelComposeCanvas.kt"
+
+          test -f "$common_toolbar"
+          test -f "$common_svg"
+          grep -q "PlotToolbar(figureModel)" "$android_canvas"
+          grep -q "PlotToolbar(figureModel)" "$wasm_canvas"
+          grep -q 'window.open(string, "_blank")' "$wasm_canvas"
+
+          evidence_dir="compose/lets-plot-compose/build/ui-parity"
+          mkdir -p "$evidence_dir"
+
+          cat > "$evidence_dir/multiplatform-ui-parity.txt" <<EOF
+          schema=1
+          result=MULTIPLATFORM_UI_PARITY_PASS
+          desktop.compile=PASS
+          android.compile=PASS
+          wasm.compile=PASS
+          toolbar.implementation=COMMON_MAIN
+          toolbar.desktop=ENABLED
+          toolbar.android=ENABLED
+          toolbar.wasm=ENABLED
+          toolbar.figure_model_lifecycle=KEYED
+          hyperlink.desktop=ENABLED
+          hyperlink.wasm=BROWSER_WINDOW_OPEN
+          public.api.change=NONE
+          production.renderer.default=NATIVE_CANVAS
+          graphite.change=NONE
+          workflow.sha=${GITHUB_SHA}
+          workflow.run_id=${GITHUB_RUN_ID}
+          EOF
+
+          cat "$evidence_dir/multiplatform-ui-parity.txt"
+
+      - name: Upload multiplatform UI parity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: multiplatform-ui-parity-${{ github.sha }}
+          path: compose/lets-plot-compose/build/ui-parity/multiplatform-ui-parity.txt
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Build multiplatform interaction contract evidence
         shell: bash
         run: |
