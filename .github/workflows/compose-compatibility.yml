@@ -2504,6 +2504,138 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+      - name: Publish probe-only Graphite runtime bundle
+        working-directory: compose
+        shell: pwsh
+        run: |
+          .\gradlew.bat -p graphite-runtime-package-probe `
+            "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
+            "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
+            clean publishRuntimeBundlePublicationToProbeRepository --stacktrace
+
+      - name: Verify Graphite runtime packaging boundary
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          SMOKE_COMPOSE_VERSION: 1.13.0-alpha01
+          SMOKE_LETS_PLOT_COMPOSE_ARTIFACT: lets-plot-compose-desktop
+        run: |
+          $evidenceDir = "graphite-runtime-package-probe\build\evidence"
+          New-Item -ItemType Directory -Force -Path $evidenceDir | Out-Null
+
+          $runtimeRepo = (Resolve-Path "graphite-runtime-package-probe\build\repo").Path
+          $artifactDir = Join-Path $runtimeRepo "org\jetbrains\lets-plot\probe\lets-plot-compose-graphite-runtime-windows-x64-probe\0.153.0-PROBE"
+          $pom = Join-Path $artifactDir "lets-plot-compose-graphite-runtime-windows-x64-probe-0.153.0-PROBE.pom"
+          $module = Join-Path $artifactDir "lets-plot-compose-graphite-runtime-windows-x64-probe-0.153.0-PROBE.module"
+          $jar = Join-Path $artifactDir "lets-plot-compose-graphite-runtime-windows-x64-probe-0.153.0-PROBE.jar"
+
+          foreach ($file in @($pom, $module, $jar)) {
+            if (!(Test-Path $file)) {
+              throw "Graphite runtime bundle publication is incomplete: $file"
+            }
+          }
+
+          if (Select-String -Path "settings.gradle.kts" -Pattern 'graphite-runtime-package-probe' -Quiet) {
+            throw "Probe-only Graphite runtime bundle must not be included in the production root build"
+          }
+
+          foreach ($pattern in @(
+            '<artifactId>skiko-awt</artifactId>',
+            '<artifactId>skiko-awt-runtime-windows-x64</artifactId>',
+            '<artifactId>skiko-graphite-awt</artifactId>',
+            '<artifactId>skiko-graphite-awt-runtime-windows-x64</artifactId>',
+            '<artifactId>lwjgl-vulkan</artifactId>'
+          )) {
+            if (!(Select-String -Path $pom -Pattern $pattern -Quiet)) {
+              Get-Content $pom
+              throw "Graphite runtime bundle POM is missing: $pattern"
+            }
+          }
+
+          $defaultReport = Join-Path $evidenceDir "default-runtime-dependencies.txt"
+          Remove-Item Env:LETS_PLOT_GRAPHITE_RUNTIME_REPO -ErrorAction SilentlyContinue
+          Remove-Item Env:SMOKE_GRAPHITE_RUNTIME_ARTIFACT -ErrorAction SilentlyContinue
+
+          .\gradlew.bat -p consumer-smoke dependencies --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $defaultReport
+
+          if (Select-String -Path $defaultReport -Pattern 'skiko-graphite-awt|lwjgl-vulkan|lets-plot-compose-graphite-runtime-windows-x64-probe' -Quiet) {
+            throw "Default consumer unexpectedly resolved Graphite/Vulkan runtime dependencies"
+          }
+
+          if (!(Select-String -Path $defaultReport -Pattern 'org\.jetbrains\.compose\.desktop:desktop-jvm-windows-x64:1\.13\.0-alpha01' -Quiet)) {
+            throw "Default packaging probe did not resolve Compose Desktop 1.13.0-alpha01"
+          }
+
+          if (!(Select-String -Path $defaultReport -Pattern 'org\.jetbrains\.skiko:skiko-awt:0\.152\.0-alpha02' -Quiet)) {
+            throw "Default packaging probe did not preserve the official Compose preview Skiko baseline"
+          }
+
+          $env:LETS_PLOT_GRAPHITE_RUNTIME_REPO = $runtimeRepo
+          $env:SMOKE_GRAPHITE_RUNTIME_ARTIFACT = "org.jetbrains.lets-plot.probe:lets-plot-compose-graphite-runtime-windows-x64-probe:0.153.0-PROBE"
+
+          $optInReport = Join-Path $evidenceDir "opt-in-runtime-dependencies.txt"
+          .\gradlew.bat -p consumer-smoke dependencies --configuration runtimeClasspath --console=plain |
+            Tee-Object -FilePath $optInReport
+
+          foreach ($pattern in @(
+            'org\.jetbrains\.lets-plot\.probe:lets-plot-compose-graphite-runtime-windows-x64-probe:0\.153\.0-PROBE',
+            'org\.jetbrains\.skiko:skiko-awt:[^\r\n]*0\.153\.0',
+            'org\.jetbrains\.skiko:skiko-awt-runtime-windows-x64:[^\r\n]*0\.153\.0',
+            'org\.jetbrains\.skiko:skiko-graphite-awt:0\.153\.0',
+            'org\.jetbrains\.skiko:skiko-graphite-awt-runtime-windows-x64:0\.153\.0',
+            'org\.lwjgl:lwjgl-vulkan:3\.4\.3'
+          )) {
+            if (!(Select-String -Path $optInReport -Pattern $pattern -Quiet)) {
+              Get-Content $optInReport
+              throw "Opt-in Graphite runtime dependency evidence missing: $pattern"
+            }
+          }
+
+          $manifest = Join-Path $evidenceDir "graphite-runtime-packaging.txt"
+          @"
+          schema=1
+          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PACKAGING_EVIDENCE_CAPABLE
+          artifact.coordinate=org.jetbrains.lets-plot.probe:lets-plot-compose-graphite-runtime-windows-x64-probe:0.153.0-PROBE
+          artifact.scope=EXPLICIT_OPT_IN
+          artifact.platform=windows-x64
+          artifact.publish=PASS
+          artifact.pom=PASS
+          artifact.gradle_module_metadata=PASS
+          artifact.root_build_membership=ABSENT
+          default.consumer.graphite_runtime=ABSENT
+          default.consumer.lwjgl_vulkan=ABSENT
+          default.consumer.skiko=0.152.0-alpha02
+          opt_in.consumer.runtime_bundle=PRESENT
+          opt_in.consumer.skiko=0.153.0
+          opt_in.consumer.graphite=0.153.0
+          opt_in.consumer.lwjgl_vulkan=3.4.3
+          production.desktop.graphite_dependency=ABSENT
+          production.renderer.default=NATIVE_CANVAS
+          runtime.provider.activation=NOT_IMPLEMENTED
+          renderer.adoption=SHADOW_OPT_IN_ONLY
+          public.api.change=NONE
+          "@ | Set-Content -Path $manifest -Encoding UTF8
+
+          Get-Content $manifest
+
+      - name: Upload Graphite runtime packaging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-runtime-packaging-${{ github.sha }}
+          path: |
+            compose/graphite-runtime-package-probe/build/evidence/graphite-runtime-packaging.txt
+            compose/graphite-runtime-package-probe/build/evidence/default-runtime-dependencies.txt
+            compose/graphite-runtime-package-probe/build/evidence/opt-in-runtime-dependencies.txt
+            compose/graphite-runtime-package-probe/build/repo/org/jetbrains/lets-plot/probe/lets-plot-compose-graphite-runtime-windows-x64-probe/0.153.0-PROBE/lets-plot-compose-graphite-runtime-windows-x64-probe-0.153.0-PROBE.pom
+            compose/graphite-runtime-package-probe/build/repo/org/jetbrains/lets-plot/probe/lets-plot-compose-graphite-runtime-windows-x64-probe/0.153.0-PROBE/lets-plot-compose-graphite-runtime-windows-x64-probe-0.153.0-PROBE.module
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Upload PlotPanel Graphite interaction stress evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -2595,6 +2727,12 @@ jobs:
           name: plotpanel-native-graphite-performance-${{ github.sha }}
           path: evidence/plotpanel-performance
 
+      - name: Download Graphite runtime packaging evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-runtime-packaging-${{ github.sha }}
+          path: evidence/runtime-packaging
+
       - name: Verify Graphite frontend readiness chain
         shell: bash
         run: |
@@ -2624,10 +2762,11 @@ jobs:
           graphite_provider="$(find_one evidence/graphite-provider graphite-render-path-provider.txt)"
           plotpanel_shadow="$(find_one evidence/plotpanel-shadow graphite-plotpanel-shadow.txt)"
           plotpanel_performance="$(find_one evidence/plotpanel-performance plotpanel-performance-comparison.txt)"
+          runtime_packaging="$(find_one evidence/runtime-packaging graphite-runtime-packaging.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n  runtime_packaging=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance" "$runtime_packaging"
 
           require_line() {
             local file="$1"
@@ -2818,13 +2957,33 @@ jobs:
           require_line "$plotpanel_performance" "renderer.adoption=SHADOW_OPT_IN_ONLY"
           require_line "$plotpanel_performance" "public.api.change=NONE"
 
+          require_line "$runtime_packaging" "result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PACKAGING_EVIDENCE_CAPABLE"
+          require_line "$runtime_packaging" "artifact.scope=EXPLICIT_OPT_IN"
+          require_line "$runtime_packaging" "artifact.platform=windows-x64"
+          require_line "$runtime_packaging" "artifact.publish=PASS"
+          require_line "$runtime_packaging" "artifact.pom=PASS"
+          require_line "$runtime_packaging" "artifact.gradle_module_metadata=PASS"
+          require_line "$runtime_packaging" "artifact.root_build_membership=ABSENT"
+          require_line "$runtime_packaging" "default.consumer.graphite_runtime=ABSENT"
+          require_line "$runtime_packaging" "default.consumer.lwjgl_vulkan=ABSENT"
+          require_line "$runtime_packaging" "default.consumer.skiko=0.152.0-alpha02"
+          require_line "$runtime_packaging" "opt_in.consumer.runtime_bundle=PRESENT"
+          require_line "$runtime_packaging" "opt_in.consumer.skiko=0.153.0"
+          require_line "$runtime_packaging" "opt_in.consumer.graphite=0.153.0"
+          require_line "$runtime_packaging" "opt_in.consumer.lwjgl_vulkan=3.4.3"
+          require_line "$runtime_packaging" "production.desktop.graphite_dependency=ABSENT"
+          require_line "$runtime_packaging" "production.renderer.default=NATIVE_CANVAS"
+          require_line "$runtime_packaging" "runtime.provider.activation=NOT_IMPLEMENTED"
+          require_line "$runtime_packaging" "renderer.adoption=SHADOW_OPT_IN_ONLY"
+          require_line "$runtime_packaging" "public.api.change=NONE"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=COMPOSE_PLOTPANEL_NATIVE_GRAPHITE_PERFORMANCE_EVIDENCE_CAPABLE
+          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PACKAGING_EVIDENCE_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -2857,6 +3016,12 @@ jobs:
           plotpanel.performance_native_samples=8
           plotpanel.performance_graphite_samples=8
           plotpanel.performance_superiority_gate=NONE
+          graphite.runtime_packaging=PASS
+          graphite.runtime_artifact_scope=EXPLICIT_OPT_IN
+          graphite.runtime_artifact_platform=windows-x64
+          graphite.runtime_default_consumer=ABSENT
+          graphite.runtime_opt_in_consumer=PRESENT
+          graphite.runtime_provider_activation=NOT_IMPLEMENTED
           plotpanel.resize=PASS
           plotpanel.recomposition=PASS
           plotpanel.figure_model_dispose=PASS
@@ -2891,7 +3056,7 @@ jobs:
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=SHADOW_OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PACKAGING_EVIDENCE
+          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PROVIDER_ACTIVATION_EVIDENCE
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
