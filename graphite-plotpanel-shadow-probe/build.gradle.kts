@@ -10,6 +10,11 @@ version = "1.0-SNAPSHOT"
 
 kotlin {
     jvmToolchain(21)
+    sourceSets {
+        named("main") {
+            kotlin.srcDir("../graphite-runtime-shared/src/main/kotlin")
+        }
+    }
 }
 
 val skikoVersion = providers.gradleProperty("skikoVersion").orElse("0.153.0")
