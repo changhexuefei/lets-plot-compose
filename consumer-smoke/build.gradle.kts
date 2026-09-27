@@ -45,6 +45,9 @@ val smokeRenderApi = providers.environmentVariable("SMOKE_RENDER_API").orElse("S
 val smokeDesktopRenderPath = providers.environmentVariable("SMOKE_DESKTOP_RENDER_PATH").orNull
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
+val smokeGraphiteFailPaintOnce = providers.environmentVariable("SMOKE_GRAPHITE_FAIL_PAINT_ONCE").orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
 val smokeSkikoVersion = providers.environmentVariable("SMOKE_SKIKO_VERSION").orNull
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
@@ -65,5 +68,8 @@ tasks.withType<JavaExec>().configureEach {
     systemProperty("skiko.renderApi", smokeRenderApi.get())
     smokeDesktopRenderPath?.let {
         systemProperty("letsplot.compose.desktop.renderPath", it)
+    }
+    smokeGraphiteFailPaintOnce?.let {
+        systemProperty("letsplot.compose.graphite.runtime.failPaintOnce", it)
     }
 }
