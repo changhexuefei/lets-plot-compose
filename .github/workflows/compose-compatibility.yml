@@ -117,6 +117,8 @@ jobs:
           offscreen.provider_failure=QUARANTINE_AND_FALLBACK_NATIVE
           offscreen.provider_failure_dispose=ONCE
           offscreen.provider_failure_retry=SUPPRESSED
+          graphite.compatibility.production_eligible=FALSE
+          graphite.compatibility.production_profile=PRODUCTION_NATIVE_BASELINE
           public.api.change=NONE
           production.graphite_dependency=ABSENT
           renderer.adoption=NOT_STARTED
@@ -950,6 +952,10 @@ jobs:
             "compose.version=$env:SMOKE_COMPOSE_VERSION",
             "frontend.recompiled=true",
             "frontend.recompiled.skiko=$env:SMOKE_SKIKO_VERSION",
+            "frontend.graphite_compatibility_eligible=true",
+            "frontend.graphite_compatibility_profile=WINDOWS_X64_JDK21_GRAPHITE_0_153",
+            "frontend.graphite_compatibility_compose=$env:SMOKE_COMPOSE_VERSION",
+            "frontend.graphite_compatibility_skiko=$env:SMOKE_SKIKO_VERSION",
             "runtime.skiko=$env:SMOKE_SKIKO_VERSION",
             "runtime.skiko.artifact=skiko-awt-runtime-all",
             "graphite.runtime=NOT_INCLUDED",
