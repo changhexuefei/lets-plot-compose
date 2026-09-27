@@ -2795,7 +2795,13 @@ jobs:
             '^result=PASS$',
             '^desktop\.renderPath\.requested=graphite-offscreen$',
             '^graphite\.runtime\.activation=ACTIVE$',
-            '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$'
+            '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$',
+            '^graphite\.runtime\.compatibility=PASS$',
+            '^graphite\.runtime\.compatibility\.reason=VERIFIED_BASELINE$',
+            '^graphite\.runtime\.compatibility\.compose=1\.13\.0-alpha01$',
+            '^graphite\.runtime\.compatibility\.skiko=0\.153\.0$',
+            '^graphite\.runtime\.compatibility\.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153$',
+            '^graphite\.runtime\.compatibility\.java=21$'
           )) {
             Require-Pattern $optInSummary $pattern
           }
@@ -2805,6 +2811,12 @@ jobs:
             '^desktop\.renderPath\.requested=graphite-offscreen$',
             '^graphite\.runtime\.activation=ACTIVE$',
             '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$',
+            '^graphite\.runtime\.compatibility=PASS$',
+            '^graphite\.runtime\.compatibility\.reason=VERIFIED_BASELINE$',
+            '^graphite\.runtime\.compatibility\.compose=1\.13\.0-alpha01$',
+            '^graphite\.runtime\.compatibility\.skiko=0\.153\.0$',
+            '^graphite\.runtime\.compatibility\.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153$',
+            '^graphite\.runtime\.compatibility\.java=21$',
             '^desktop\.offscreen\.failure=java\.lang\.IllegalStateException$',
             '^desktop\.offscreen\.failureCount=1$',
             '^graphite\.runtime\.injectedFailure=TRIGGERED$',
@@ -2845,6 +2857,12 @@ jobs:
           missing_runtime.consumer_smoke=PASS
           opt_in_runtime.activation=ACTIVE
           opt_in_runtime.backend=PERSISTENT_GRAPHITE_VULKAN
+          opt_in_runtime.compatibility=PASS
+          opt_in_runtime.compatibility_reason=VERIFIED_BASELINE
+          opt_in_runtime.compatibility_compose=1.13.0-alpha01
+          opt_in_runtime.compatibility_skiko=0.153.0
+          opt_in_runtime.compatibility_profile=WINDOWS_X64_JDK21_GRAPHITE_0_153
+          opt_in_runtime.compatibility_jdk=21
           opt_in_runtime.consumer_smoke=PASS
           opt_in_runtime.full_interaction_smoke=PASS
           runtime.jar.bootstrap=PRESENT
