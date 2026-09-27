@@ -854,9 +854,25 @@ jobs:
         run: >
           .\gradlew.bat
           -I skiko-0.153-override.init.gradle
+          "-PletsPlot.graphite.compatibility.enabled=true"
+          "-PletsPlot.graphite.compatibility.skiko=$env:SMOKE_SKIKO_VERSION"
+          "-PletsPlot.graphite.compatibility.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153"
           :lets-plot-compose:clean
           :lets-plot-compose:publishDesktopPublicationToMavenLocalRepository
           --stacktrace
+
+      - name: Verify recompiled frontend Graphite compatibility marker
+        working-directory: compose
+        shell: pwsh
+        run: |
+          $desktopJar = Get-ChildItem ".maven-publish-dev-repo\org\jetbrains\lets-plot\lets-plot-compose-desktop" -Recurse -Filter "lets-plot-compose-desktop-*.jar" | Where-Object { $_.Name -notmatch 'javadoc|sources' } | Select-Object -First 1
+          if ($null -eq $desktopJar) { throw "Recompiled lets-plot-compose-desktop jar was not published" }
+          $report = "build\graphite-compatibility-marker.txt"
+          & javap -classpath $desktopJar.FullName -constants org.jetbrains.letsPlot.compose.DesktopGraphiteCompatibilityMarker | Set-Content -Path $report -Encoding UTF8
+          Get-Content $report
+          foreach ($pattern in @('ELIGIBLE = true','COMPOSE_VERSION = "1\.13\.0-alpha01"','COMPILE_SKIKO_VERSION = "0\.153\.0"','PROFILE = "WINDOWS_X64_JDK21_GRAPHITE_0_153"')) {
+            if (!(Select-String -Path $report -Pattern $pattern -Quiet)) { throw "Recompiled frontend Graphite compatibility marker mismatch: $pattern" }
+          }
 
       - name: Run full consumer smoke against recompiled frontend
         working-directory: compose
@@ -964,6 +980,7 @@ jobs:
             compose/consumer-smoke/build/smoke/baseline-manifest.txt
             compose/consumer-smoke/build/smoke/renderer-dependencies.txt
             compose/build/skiko-0.153-frontend-dependencies.txt
+            compose/build/graphite-compatibility-marker.txt
             consumer-bundle/manifest.txt
             consumer-bundle/core-manifest.txt
           if-no-files-found: warn
