@@ -42,6 +42,7 @@ import org.lwjgl.vulkan.VkSubmitInfo
 import java.awt.image.BufferedImage
 import java.io.File
 import java.lang.reflect.Proxy
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val GRAPHITE_RUNTIME_WHITE = -1
@@ -85,6 +86,12 @@ internal class PersistentGraphiteShadowBackend(
     private var disposed = false
 
     private val successfulFrames = AtomicInteger()
+    private val paintAttempts = AtomicInteger()
+    private val injectedFailurePending = AtomicBoolean(
+        System.getProperty("letsplot.compose.graphite.runtime.failPaintOnce")
+            ?.equals("true", ignoreCase = true)
+            ?: false
+    )
     private val contextCreateCount = AtomicInteger()
     private val targetCreateCount = AtomicInteger()
     private val targetReuseCount = AtomicInteger()
@@ -119,6 +126,12 @@ internal class PersistentGraphiteShadowBackend(
         check(!disposed) { "Graphite shadow provider is disposed" }
         require(args != null && args.size == 6) { "Unexpected DesktopOffscreenRenderer.paint arguments" }
 
+        val attempt = paintAttempts.incrementAndGet()
+        System.setProperty(
+            "letsplot.compose.graphite.runtime.paintAttempts",
+            attempt.toString()
+        )
+
         val targetCanvas = args[0] as org.jetbrains.skia.Canvas
         val width = args[1] as Int
         val height = args[2] as Int
@@ -131,6 +144,15 @@ internal class PersistentGraphiteShadowBackend(
 
         val (vk, context) = ensureContext()
         val renderTarget = ensureTarget(vk, width, height)
+
+        if (injectedFailurePending.compareAndSet(true, false)) {
+            evidence["runtime.injected.paint_failure"] = "TRIGGERED"
+            System.setProperty(
+                "letsplot.compose.graphite.runtime.injectedFailure",
+                "TRIGGERED"
+            )
+            error("Injected Graphite runtime paint failure after GPU resource initialization")
+        }
 
         if (renderTarget.layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
             layoutReuseObserved = true
@@ -216,6 +238,10 @@ internal class PersistentGraphiteShadowBackend(
         return createRenderImage(vk, width, height).also {
             target = it
             targetCreateCount.incrementAndGet()
+            System.setProperty(
+                "letsplot.compose.graphite.runtime.targetCreated",
+                "YES"
+            )
         }
     }
 
@@ -246,6 +272,10 @@ internal class PersistentGraphiteShadowBackend(
         vulkan = vk
         graphiteContext = context
         contextCreateCount.incrementAndGet()
+        System.setProperty(
+            "letsplot.compose.graphite.runtime.contextCreated",
+            "YES"
+        )
         evidence["vulkan.device.name"] = vk.deviceName
         return vk to context
     }
@@ -254,7 +284,11 @@ internal class PersistentGraphiteShadowBackend(
     fun dispose() {
         if (disposed) return
         disposed = true
-        providerDisposeCount.incrementAndGet()
+        val disposeCount = providerDisposeCount.incrementAndGet()
+        System.setProperty(
+            "letsplot.compose.graphite.runtime.disposeCount",
+            disposeCount.toString()
+        )
 
         val vk = vulkan
         try {
@@ -275,6 +309,10 @@ internal class PersistentGraphiteShadowBackend(
             }
             target = null
             vulkan = null
+            System.setProperty(
+                "letsplot.compose.graphite.runtime.cleanup",
+                "PASS"
+            )
         }
     }
 
