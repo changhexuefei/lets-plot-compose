@@ -16,6 +16,10 @@ kotlin {
 
 val smokeLetsPlotComposeArtifact = providers.environmentVariable("SMOKE_LETS_PLOT_COMPOSE_ARTIFACT")
     .orElse("lets-plot-compose")
+val smokeGraphiteRuntimeArtifact = providers.environmentVariable("SMOKE_GRAPHITE_RUNTIME_ARTIFACT")
+    .orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
 
 dependencies {
     implementation(compose.desktop.currentOs)
@@ -25,6 +29,10 @@ dependencies {
     implementation("org.jetbrains.lets-plot:lets-plot-common:4.11.1-SNAPSHOT")
     implementation("org.jetbrains.lets-plot:lets-plot-kotlin:4.15.1-SNAPSHOT")
     implementation("org.jetbrains.lets-plot:${smokeLetsPlotComposeArtifact.get()}:3.2.3-SNAPSHOT")
+
+    if (smokeGraphiteRuntimeArtifact != null) {
+        runtimeOnly(smokeGraphiteRuntimeArtifact)
+    }
 
     implementation("org.slf4j:slf4j-simple:2.0.17")
 }
