@@ -69,13 +69,14 @@ fun PlotPanelComposeCanvas(
     // Cache processed plot spec to avoid reprocessing the same raw spec on every recomposition.
     // Note: Use remember(rawSpec.hashCode()), to bypass the equality check and use the content hash directly.
     // The issue was that remember(rawSpec) uses some kind of comparison (equals()?) which somehow not working for `MutableMap`.
-    val processedPlotSpec = remember(rawSpec.hashCode()) {
+    val rawSpecKey = rawSpec.hashCode()
+    val processedPlotSpec = remember(rawSpecKey) {
         processRawSpecs(rawSpec, frontendOnly = false)
     }
 
     var panelSize by remember { mutableStateOf(DoubleVector.ZERO) }
     var plotPosition by remember { mutableStateOf(DoubleVector.ZERO) }
-    var dispatchComputationMessages by remember { mutableStateOf(true) }
+    val computationMessagesDispatchGate = remember { ComputationMessagesDispatchGate() }
 
     // Observe spec override state from figureModel
     val specOverrideState by figureModel.specOverrideState
@@ -211,9 +212,7 @@ fun PlotPanelComposeCanvas(
                             val plotSpec = applySpecOverride(processedPlotSpec, specOverrideState).toMutableMap()
 
                             plotDrawable.update(plotSpec, fitContainerSize(preserveAspectRatio)) { messages ->
-                                if (dispatchComputationMessages) {
-                                    // do once
-                                    dispatchComputationMessages = false
+                                if (computationMessagesDispatchGate.shouldDispatch(rawSpecKey)) {
                                     computationMessagesHandler(messages)
                                 }
                             }
