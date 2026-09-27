@@ -210,6 +210,18 @@ fun main() {
                         appendLine("os.name=${System.getProperty("os.name")}")
                         appendLine("os.version=${System.getProperty("os.version")}")
                         appendLine("renderApi=${System.getProperty("skiko.renderApi")}")
+                        appendLine(
+                            "desktop.renderPath.requested=" +
+                                (System.getProperty("letsplot.compose.desktop.renderPath") ?: "default")
+                        )
+                        appendLine(
+                            "graphite.runtime.activation=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.activation") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.backend=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.backend") ?: "ABSENT")
+                        )
                         appendLine("checks=render,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
                     }
                 )

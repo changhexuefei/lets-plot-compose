@@ -11,12 +11,18 @@ import org.jetbrains.letsPlot.commons.values.Color
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Surface
 import kotlin.math.abs
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DesktopRenderPathTest {
+    @AfterTest
+    fun resetOptionalRuntimeBootstrap() {
+        DesktopOffscreenRuntimeBootstrap.resetForTests()
+    }
+
     @Test
     fun nativeCanvasIsTheDefaultAndUnknownValuesFailClosed() {
         assertEquals(DesktopRenderPath.NATIVE_CANVAS, resolveDesktopRenderPath(null))
@@ -35,6 +41,7 @@ class DesktopRenderPathTest {
     @Test
     fun missingOffscreenProviderFallsBackToNativeCanvas() {
         assertNull(DesktopOffscreenRendererRegistry.current())
+        DesktopOffscreenRuntimeBootstrap.resetForTests { false }
 
         var painted = false
         Surface.makeRasterN32Premul(32, 32).use { surface ->
@@ -52,6 +59,72 @@ class DesktopRenderPathTest {
             assertTrue(painted)
             assertEquals(DesktopRenderPath.NATIVE_CANVAS, effective)
         }
+    }
+
+    @Test
+    fun nativeCanvasDoesNotAttemptOptionalRuntimeActivation() {
+        var activationCount = 0
+        DesktopOffscreenRuntimeBootstrap.resetForTests {
+            activationCount++
+            false
+        }
+
+        Surface.makeRasterN32Premul(24, 24).use { surface ->
+            val effective = paintDesktopPlot(
+                canvas = surface.canvas,
+                width = 24,
+                height = 24,
+                density = 1.0,
+                plotPosition = DoubleVector.ZERO,
+                requestedPath = DesktopRenderPath.NATIVE_CANVAS
+            ) {}
+
+            assertEquals(DesktopRenderPath.NATIVE_CANVAS, effective)
+            assertEquals(0, activationCount)
+        }
+    }
+
+    @Test
+    fun explicitOffscreenRequestActivatesOptionalRuntimeOnce() {
+        assertNull(DesktopOffscreenRendererRegistry.current())
+
+        var activationCount = 0
+        var providerPaintCount = 0
+        var registration: Registration? = null
+
+        DesktopOffscreenRuntimeBootstrap.resetForTests {
+            activationCount++
+            registration = DesktopOffscreenRendererRegistry.install(
+                passthroughRenderer {
+                    providerPaintCount++
+                }
+            )
+            true
+        }
+
+        try {
+            Surface.makeRasterN32Premul(32, 32).use { surface ->
+                repeat(2) {
+                    val effective = paintDesktopPlot(
+                        canvas = surface.canvas,
+                        width = 32,
+                        height = 32,
+                        density = 1.0,
+                        plotPosition = DoubleVector.ZERO,
+                        requestedPath = DesktopRenderPath.OFFSCREEN_COMPOSITE
+                    ) {}
+
+                    assertEquals(DesktopRenderPath.OFFSCREEN_COMPOSITE, effective)
+                }
+            }
+
+            assertEquals(1, activationCount)
+            assertEquals(2, providerPaintCount)
+        } finally {
+            registration?.dispose()
+        }
+
+        assertNull(DesktopOffscreenRendererRegistry.current())
     }
 
     @Test

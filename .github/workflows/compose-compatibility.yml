@@ -112,6 +112,8 @@ jobs:
           offscreen.provider.ownership=REGISTRATION_SAFE
           offscreen.provider.stale_dispose=SAFE
           offscreen.provider.dispose=REGISTRATION_OWNED
+          offscreen.runtime_bootstrap=EXPLICIT_OFFSCREEN_REQUEST_ONLY
+          offscreen.runtime_missing=FALLBACK_NATIVE
           public.api.change=NONE
           production.graphite_dependency=ABSENT
           renderer.adoption=NOT_STARTED
@@ -2507,6 +2509,10 @@ jobs:
       - name: Publish probe-only Graphite runtime bundle
         working-directory: compose
         shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
         run: |
           .\gradlew.bat -p graphite-runtime-package-probe `
             "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" `
@@ -2615,12 +2621,151 @@ jobs:
           opt_in.consumer.lwjgl_vulkan=3.4.3
           production.desktop.graphite_dependency=ABSENT
           production.renderer.default=NATIVE_CANVAS
-          runtime.provider.activation=NOT_IMPLEMENTED
+          runtime.provider.activation=EXPLICIT_OFFSCREEN_BOOTSTRAP
           renderer.adoption=SHADOW_OPT_IN_ONLY
           public.api.change=NONE
           "@ | Set-Content -Path $manifest -Encoding UTF8
 
           Get-Content $manifest
+
+      - name: Verify missing optional runtime falls back to Native Canvas
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          SMOKE_COMPOSE_VERSION: 1.13.0-alpha01
+          SMOKE_LETS_PLOT_COMPOSE_ARTIFACT: lets-plot-compose-desktop
+          SMOKE_RENDER_API: SOFTWARE
+          SMOKE_DESKTOP_RENDER_PATH: graphite-offscreen
+          SMOKE_TOOLTIP_STABLE_BASELINE: 'true'
+          SMOKE_TOOLTIP_DWELL_MS: '700'
+          SMOKE_TOOLTIP_X_RADIUS: '160'
+          SMOKE_TOOLTIP_Y_RADIUS: '120'
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-runtime-package-probe\build\activation\fallback
+        run: |
+          Remove-Item Env:LETS_PLOT_GRAPHITE_RUNTIME_REPO -ErrorAction SilentlyContinue
+          Remove-Item Env:SMOKE_GRAPHITE_RUNTIME_ARTIFACT -ErrorAction SilentlyContinue
+          .\gradlew.bat -p consumer-smoke clean run --stacktrace
+
+      - name: Verify opt-in runtime auto-activates persistent Graphite provider
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          LETS_PLOT_GRAPHITE_RUNTIME_REPO: ${{ github.workspace }}\compose\graphite-runtime-package-probe\build\repo
+          SMOKE_GRAPHITE_RUNTIME_ARTIFACT: org.jetbrains.lets-plot.probe:lets-plot-compose-graphite-runtime-windows-x64-probe:0.153.0-PROBE
+          SMOKE_COMPOSE_VERSION: 1.13.0-alpha01
+          SMOKE_LETS_PLOT_COMPOSE_ARTIFACT: lets-plot-compose-desktop
+          SMOKE_RENDER_API: SOFTWARE
+          SMOKE_DESKTOP_RENDER_PATH: graphite-offscreen
+          SMOKE_TOOLTIP_STABLE_BASELINE: 'true'
+          SMOKE_TOOLTIP_DWELL_MS: '700'
+          SMOKE_TOOLTIP_X_RADIUS: '160'
+          SMOKE_TOOLTIP_Y_RADIUS: '120'
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-runtime-package-probe\build\activation\opt-in
+        run: .\gradlew.bat -p consumer-smoke clean run --stacktrace
+
+      - name: Verify Graphite runtime provider activation contract
+        working-directory: compose
+        shell: pwsh
+        run: |
+          $activationDir = "graphite-runtime-package-probe\build\activation"
+          $fallbackSummary = Join-Path $activationDir "fallback\smoke-summary.txt"
+          $optInSummary = Join-Path $activationDir "opt-in\smoke-summary.txt"
+          $manifest = Join-Path $activationDir "graphite-runtime-provider-activation.txt"
+          $jarEntries = Join-Path $activationDir "runtime-jar-entries.txt"
+
+          foreach ($file in @($fallbackSummary, $optInSummary)) {
+            if (!(Test-Path $file)) {
+              throw "Runtime activation smoke summary missing: $file"
+            }
+          }
+
+          function Require-Pattern([string]$file, [string]$pattern) {
+            if (!(Select-String -Path $file -Pattern $pattern -Quiet)) {
+              Get-Content $file
+              throw "Runtime activation contract missing from $file : $pattern"
+            }
+          }
+
+          foreach ($pattern in @(
+            '^result=PASS$',
+            '^desktop\.renderPath\.requested=graphite-offscreen$',
+            '^graphite\.runtime\.activation=ABSENT$',
+            '^graphite\.runtime\.backend=ABSENT$'
+          )) {
+            Require-Pattern $fallbackSummary $pattern
+          }
+
+          foreach ($pattern in @(
+            '^result=PASS$',
+            '^desktop\.renderPath\.requested=graphite-offscreen$',
+            '^graphite\.runtime\.activation=ACTIVE$',
+            '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$'
+          )) {
+            Require-Pattern $optInSummary $pattern
+          }
+
+          $runtimeJar = Get-ChildItem "graphite-runtime-package-probe\build\repo\org\jetbrains\lets-plot\probe\lets-plot-compose-graphite-runtime-windows-x64-probe\0.153.0-PROBE" -Filter "*.jar" | Select-Object -First 1
+          if ($null -eq $runtimeJar) {
+            throw "Optional Graphite runtime jar was not published"
+          }
+
+          & jar tf $runtimeJar.FullName | Set-Content -Path $jarEntries -Encoding UTF8
+
+          foreach ($pattern in @(
+            'org/jetbrains/letsPlot/compose/graphite/runtime/GraphiteRuntimeBootstrap.class',
+            'probe/PersistentGraphiteShadowBackend.class'
+          )) {
+            if (!(Select-String -Path $jarEntries -Pattern $pattern -Quiet)) {
+              Get-Content $jarEntries
+              throw "Optional runtime jar is missing activation/backend class: $pattern"
+            }
+          }
+
+          @"
+          schema=1
+          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PROVIDER_ACTIVATION_EVIDENCE_CAPABLE
+          request.path=graphite-offscreen
+          bootstrap.trigger=EXPLICIT_OFFSCREEN_REQUEST_ONLY
+          bootstrap.attempt=ONCE
+          missing_runtime.activation=ABSENT
+          missing_runtime.fallback_native=PASS
+          missing_runtime.consumer_smoke=PASS
+          opt_in_runtime.activation=ACTIVE
+          opt_in_runtime.backend=PERSISTENT_GRAPHITE_VULKAN
+          opt_in_runtime.consumer_smoke=PASS
+          opt_in_runtime.full_interaction_smoke=PASS
+          runtime.jar.bootstrap=PRESENT
+          runtime.jar.shared_backend=PRESENT
+          production.renderer.default=NATIVE_CANVAS
+          production.desktop.graphite_dependency=ABSENT
+          renderer.adoption=SHADOW_OPT_IN_ONLY
+          public.api.change=NONE
+          "@ | Set-Content -Path $manifest -Encoding UTF8
+
+          Get-Content $fallbackSummary
+          Get-Content $optInSummary
+          Get-Content $manifest
+
+      - name: Upload Graphite runtime provider activation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-runtime-provider-activation-${{ github.sha }}
+          path: |
+            compose/graphite-runtime-package-probe/build/activation/graphite-runtime-provider-activation.txt
+            compose/graphite-runtime-package-probe/build/activation/runtime-jar-entries.txt
+            compose/graphite-runtime-package-probe/build/activation/fallback/smoke-summary.txt
+            compose/graphite-runtime-package-probe/build/activation/fallback/*.png
+            compose/graphite-runtime-package-probe/build/activation/opt-in/smoke-summary.txt
+            compose/graphite-runtime-package-probe/build/activation/opt-in/*.png
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Upload Graphite runtime packaging evidence
         if: always()
@@ -2733,6 +2878,12 @@ jobs:
           name: graphite-runtime-packaging-${{ github.sha }}
           path: evidence/runtime-packaging
 
+      - name: Download Graphite runtime provider activation evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-runtime-provider-activation-${{ github.sha }}
+          path: evidence/runtime-activation
+
       - name: Verify Graphite frontend readiness chain
         shell: bash
         run: |
@@ -2763,10 +2914,11 @@ jobs:
           plotpanel_shadow="$(find_one evidence/plotpanel-shadow graphite-plotpanel-shadow.txt)"
           plotpanel_performance="$(find_one evidence/plotpanel-performance plotpanel-performance-comparison.txt)"
           runtime_packaging="$(find_one evidence/runtime-packaging graphite-runtime-packaging.txt)"
+          runtime_activation="$(find_one evidence/runtime-activation graphite-runtime-provider-activation.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n  runtime_packaging=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance" "$runtime_packaging"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n  runtime_packaging=%s\n  runtime_activation=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance" "$runtime_packaging" "$runtime_activation"
 
           require_line() {
             local file="$1"
@@ -2835,6 +2987,8 @@ jobs:
           require_line "$render_path" "offscreen.provider.ownership=REGISTRATION_SAFE"
           require_line "$render_path" "offscreen.provider.stale_dispose=SAFE"
           require_line "$render_path" "offscreen.provider.dispose=REGISTRATION_OWNED"
+          require_line "$render_path" "offscreen.runtime_bootstrap=EXPLICIT_OFFSCREEN_REQUEST_ONLY"
+          require_line "$render_path" "offscreen.runtime_missing=FALLBACK_NATIVE"
           require_line "$render_path" "public.api.change=NONE"
           require_line "$render_path" "production.graphite_dependency=ABSENT"
           require_line "$render_path" "renderer.adoption=NOT_STARTED"
@@ -2973,9 +3127,27 @@ jobs:
           require_line "$runtime_packaging" "opt_in.consumer.lwjgl_vulkan=3.4.3"
           require_line "$runtime_packaging" "production.desktop.graphite_dependency=ABSENT"
           require_line "$runtime_packaging" "production.renderer.default=NATIVE_CANVAS"
-          require_line "$runtime_packaging" "runtime.provider.activation=NOT_IMPLEMENTED"
+          require_line "$runtime_packaging" "runtime.provider.activation=EXPLICIT_OFFSCREEN_BOOTSTRAP"
           require_line "$runtime_packaging" "renderer.adoption=SHADOW_OPT_IN_ONLY"
           require_line "$runtime_packaging" "public.api.change=NONE"
+
+          require_line "$runtime_activation" "result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PROVIDER_ACTIVATION_EVIDENCE_CAPABLE"
+          require_line "$runtime_activation" "request.path=graphite-offscreen"
+          require_line "$runtime_activation" "bootstrap.trigger=EXPLICIT_OFFSCREEN_REQUEST_ONLY"
+          require_line "$runtime_activation" "bootstrap.attempt=ONCE"
+          require_line "$runtime_activation" "missing_runtime.activation=ABSENT"
+          require_line "$runtime_activation" "missing_runtime.fallback_native=PASS"
+          require_line "$runtime_activation" "missing_runtime.consumer_smoke=PASS"
+          require_line "$runtime_activation" "opt_in_runtime.activation=ACTIVE"
+          require_line "$runtime_activation" "opt_in_runtime.backend=PERSISTENT_GRAPHITE_VULKAN"
+          require_line "$runtime_activation" "opt_in_runtime.consumer_smoke=PASS"
+          require_line "$runtime_activation" "opt_in_runtime.full_interaction_smoke=PASS"
+          require_line "$runtime_activation" "runtime.jar.bootstrap=PRESENT"
+          require_line "$runtime_activation" "runtime.jar.shared_backend=PRESENT"
+          require_line "$runtime_activation" "production.renderer.default=NATIVE_CANVAS"
+          require_line "$runtime_activation" "production.desktop.graphite_dependency=ABSENT"
+          require_line "$runtime_activation" "renderer.adoption=SHADOW_OPT_IN_ONLY"
+          require_line "$runtime_activation" "public.api.change=NONE"
 
       - name: Build Graphite renderer readiness manifest
         shell: bash
@@ -2983,7 +3155,7 @@ jobs:
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PACKAGING_EVIDENCE_CAPABLE
+          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PROVIDER_ACTIVATION_EVIDENCE_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -3021,7 +3193,13 @@ jobs:
           graphite.runtime_artifact_platform=windows-x64
           graphite.runtime_default_consumer=ABSENT
           graphite.runtime_opt_in_consumer=PRESENT
-          graphite.runtime_provider_activation=NOT_IMPLEMENTED
+          graphite.runtime_provider_activation=PASS
+          graphite.runtime_bootstrap_trigger=EXPLICIT_OFFSCREEN_REQUEST_ONLY
+          graphite.runtime_bootstrap_attempt=ONCE
+          graphite.runtime_missing_fallback=PASS
+          graphite.runtime_opt_in_activation=ACTIVE
+          graphite.runtime_opt_in_backend=PERSISTENT_GRAPHITE_VULKAN
+          graphite.runtime_full_interaction_smoke=PASS
           plotpanel.resize=PASS
           plotpanel.recomposition=PASS
           plotpanel.figure_model_dispose=PASS
@@ -3056,7 +3234,7 @@ jobs:
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=SHADOW_OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PROVIDER_ACTIVATION_EVIDENCE
+          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF

@@ -12,6 +12,9 @@ import org.jetbrains.skia.Canvas
 
 internal const val DESKTOP_RENDER_PATH_PROPERTY = "letsplot.compose.desktop.renderPath"
 
+private const val GRAPHITE_RUNTIME_BOOTSTRAP_CLASS =
+    "org.jetbrains.letsPlot.compose.graphite.runtime.GraphiteRuntimeBootstrap"
+
 internal enum class DesktopRenderPath {
     NATIVE_CANVAS,
     OFFSCREEN_COMPOSITE
@@ -60,6 +63,61 @@ internal object DesktopOffscreenRendererRegistry {
     }
 }
 
+internal object DesktopOffscreenRuntimeBootstrap {
+    private val lock = Any()
+    private var attempted = false
+    private var activationOverrideForTests: (() -> Boolean)? = null
+
+    fun ensureInstalled(): Boolean {
+        if (DesktopOffscreenRendererRegistry.current() != null) {
+            return true
+        }
+
+        return synchronized(lock) {
+            if (DesktopOffscreenRendererRegistry.current() != null) {
+                return@synchronized true
+            }
+            if (attempted) {
+                return@synchronized false
+            }
+
+            attempted = true
+            val activated = activationOverrideForTests?.invoke() ?: activateFromClasspath()
+            activated && DesktopOffscreenRendererRegistry.current() != null
+        }
+    }
+
+    internal fun resetForTests(
+        activationOverride: (() -> Boolean)? = null
+    ) {
+        synchronized(lock) {
+            attempted = false
+            activationOverrideForTests = activationOverride
+        }
+    }
+
+    private fun activateFromClasspath(): Boolean {
+        return try {
+            val classLoader =
+                Thread.currentThread().contextClassLoader
+                    ?: DesktopOffscreenRuntimeBootstrap::class.java.classLoader
+            val bootstrapClass = Class.forName(
+                GRAPHITE_RUNTIME_BOOTSTRAP_CLASS,
+                true,
+                classLoader
+            )
+            val activate = bootstrapClass.getMethod("activate")
+            activate.invoke(null) == true
+        } catch (t: Throwable) {
+            when (t) {
+                is VirtualMachineError,
+                is ThreadDeath -> throw t
+                else -> false
+            }
+        }
+    }
+}
+
 internal fun resolveDesktopRenderPath(
     configuredValue: String? = System.getProperty(DESKTOP_RENDER_PATH_PROPERTY)
 ): DesktopRenderPath {
@@ -93,8 +151,15 @@ internal fun paintDesktopPlot(
     paint: (SkiaContext2d) -> Unit
 ): DesktopRenderPath {
     if (requestedPath == DesktopRenderPath.OFFSCREEN_COMPOSITE && width > 0 && height > 0) {
-        DesktopOffscreenRendererRegistry.current()?.let { renderer ->
-            renderer.paint(
+        val renderer =
+            DesktopOffscreenRendererRegistry.current()
+                ?: run {
+                    DesktopOffscreenRuntimeBootstrap.ensureInstalled()
+                    DesktopOffscreenRendererRegistry.current()
+                }
+
+        renderer?.let {
+            it.paint(
                 targetCanvas = canvas,
                 width = width,
                 height = height,
