@@ -5,18 +5,33 @@
 
 package org.jetbrains.letsPlot.compose
 
-import androidx.compose.foundation.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.letsPlot.core.plot.builder.interact.tools.DefaultFigureToolsController
 import org.jetbrains.letsPlot.core.plot.builder.interact.tools.FigureModel
 import org.jetbrains.letsPlot.core.plot.builder.interact.tools.ToggleTool
@@ -26,28 +41,34 @@ import org.jetbrains.letsPlot.core.plot.builder.interact.tools.ToolSpecs.CBOX_ZO
 import org.jetbrains.letsPlot.core.plot.builder.interact.tools.ToolSpecs.PAN_TOOL_SPEC
 import org.jetbrains.letsPlot.core.plot.builder.interact.tools.res.ToolbarIcons
 
-
 @Suppress("FunctionName")
 @Composable
 fun PlotToolbar(figureModel: FigureModel) {
-    var registration by remember { mutableStateOf(Registration.EMPTY) }
-    var panToolState by remember { mutableStateOf(false) }
-    var bboxZoomToolState by remember { mutableStateOf(false) }
-    var cboxZoomToolState by remember { mutableStateOf(false) }
+    var panToolState by remember(figureModel) { mutableStateOf(false) }
+    var bboxZoomToolState by remember(figureModel) { mutableStateOf(false) }
+    var cboxZoomToolState by remember(figureModel) { mutableStateOf(false) }
 
-    val panTool = remember { ToggleTool(PAN_TOOL_SPEC) }
-    val bboxZoomTool = remember { ToggleTool(BBOX_ZOOM_TOOL_SPEC) }
-    val cboxZoomTool = remember { ToggleTool(CBOX_ZOOM_TOOL_SPEC) }
+    val panTool = remember(figureModel) { ToggleTool(PAN_TOOL_SPEC) }
+    val bboxZoomTool = remember(figureModel) { ToggleTool(BBOX_ZOOM_TOOL_SPEC) }
+    val cboxZoomTool = remember(figureModel) { ToggleTool(CBOX_ZOOM_TOOL_SPEC) }
 
-    val controller = remember {
-        DefaultFigureToolsController(figureModel, errorMessageHandler = { println(it) }).also {
-            registration = figureModel.addToolEventCallback { event ->
-                it.handleToolFeedback(event)
-            }
+    val controller = remember(figureModel) {
+        DefaultFigureToolsController(
+            figureModel,
+            errorMessageHandler = { println(it) }
+        )
+    }
+
+    DisposableEffect(figureModel, controller) {
+        val registration = figureModel.addToolEventCallback { event ->
+            controller.handleToolFeedback(event)
+        }
+        onDispose {
+            registration.dispose()
         }
     }
 
-    val panToolModel = remember {
+    val panToolModel = remember(controller, panTool) {
         object : ToggleToolModel() {
             override fun setState(selected: Boolean) {
                 panToolState = selected
@@ -55,7 +76,7 @@ fun PlotToolbar(figureModel: FigureModel) {
         }.also { controller.registerTool(panTool, it) }
     }
 
-    val bboxZoomToolModel = remember {
+    val bboxZoomToolModel = remember(controller, bboxZoomTool) {
         object : ToggleToolModel() {
             override fun setState(selected: Boolean) {
                 bboxZoomToolState = selected
@@ -63,7 +84,7 @@ fun PlotToolbar(figureModel: FigureModel) {
         }.also { controller.registerTool(bboxZoomTool, it) }
     }
 
-    val cboxZoomToolModel = remember {
+    val cboxZoomToolModel = remember(controller, cboxZoomTool) {
         object : ToggleToolModel() {
             override fun setState(selected: Boolean) {
                 cboxZoomToolState = selected
@@ -71,16 +92,6 @@ fun PlotToolbar(figureModel: FigureModel) {
         }.also { controller.registerTool(cboxZoomTool, it) }
     }
 
-    DisposableEffect(figureModel) {
-        onDispose {
-            registration.remove()
-        }
-    }
-
-    // Toolbar container - matches PlotPanelToolbar.kt (Swing)
-    //
-    // Expected height: 33px
-    // (org.jetbrains.letsPlot.core.plot.builder.presentation.Defaults.TOOLBAR_HEIGHT)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -105,21 +116,18 @@ fun PlotToolbar(figureModel: FigureModel) {
                 onClick = { panToolModel.action() },
                 contentDescription = "Pan"
             )
-
             SvgIconButton(
                 svgString = ToolbarIcons.ZOOM_CORNER,
                 isSelected = bboxZoomToolState,
                 onClick = { bboxZoomToolModel.action() },
                 contentDescription = "Rubber Band Zoom"
             )
-
             SvgIconButton(
                 svgString = ToolbarIcons.ZOOM_CENTER,
                 isSelected = cboxZoomToolState,
                 onClick = { cboxZoomToolModel.action() },
                 contentDescription = "Centerpoint Zoom"
             )
-
             SvgIconButton(
                 svgString = ToolbarIcons.RESET,
                 isSelected = false,
@@ -141,15 +149,11 @@ private fun SvgIconButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
-    val iconColor = when {
-        isSelected -> C_STROKE_SEL  // White when selected
-        else -> C_STROKE             // Gray for normal and hover
-    }
-
+    val iconColor = if (isSelected) C_STROKE_SEL else C_STROKE
     val backgroundColor = when {
-        isSelected -> C_BACKGR_SEL           // Blue when selected
-        isHovered -> C_BACKGR_HOVER          // Light gray when hovering
-        else -> Color.Transparent            // Transparent for a normal state
+        isSelected -> C_BACKGR_SEL
+        isHovered -> C_BACKGR_HOVER
+        else -> Color.Transparent
     }
 
     val icon = SvgIconUtils.rememberSvgIcon(
@@ -186,12 +190,9 @@ private val C_STROKE_SEL = Color.White
 
 private const val ALPHA = 0.8f
 
-// C_BACKGR with an alpha channel which on a white background looks the same as the solid C_BACKGR
-// and slightly darkens any darker background.
 private val C_BACKGR_TRANSPARENT = Color(
     red = (C_BACKGR.red - 1.0f * (1 - ALPHA)) / ALPHA,
     green = (C_BACKGR.green - 1.0f * (1 - ALPHA)) / ALPHA,
     blue = (C_BACKGR.blue - 1.0f * (1 - ALPHA)) / ALPHA,
     alpha = ALPHA
 )
-

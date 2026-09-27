@@ -33,6 +33,7 @@ import org.jetbrains.letsPlot.commons.intern.observable.event.EventHandler
 import org.jetbrains.letsPlot.commons.logging.PortableLogging
 import org.jetbrains.letsPlot.commons.registration.CompositeRegistration
 import org.jetbrains.letsPlot.commons.registration.Registration
+import org.jetbrains.letsPlot.core.spec.Option.Meta.Kind.GG_TOOLBAR
 import org.jetbrains.letsPlot.core.spec.config.PlotConfig
 import org.jetbrains.letsPlot.core.spec.front.SpecOverrideUtil.applySpecOverride
 import org.jetbrains.letsPlot.core.util.MonolithicCommon.processRawSpecs
@@ -142,9 +143,9 @@ fun PlotPanelComposeCanvas(
     }
 
     Column(modifier = finalModifier) {
-        //if (plotFigureModel != null && GG_TOOLBAR in processedPlotSpec) {
-        //    PlotToolbar(plotFigureModel!!)
-        //}
+        if (GG_TOOLBAR in processedPlotSpec) {
+            PlotToolbar(figureModel)
+        }
 
         Box(
             modifier = finalModifier
