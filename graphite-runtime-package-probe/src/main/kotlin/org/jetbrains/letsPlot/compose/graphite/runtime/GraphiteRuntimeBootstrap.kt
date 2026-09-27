@@ -26,6 +26,7 @@ object GraphiteRuntimeBootstrap {
     fun activate(): Boolean {
         registration?.let {
             System.setProperty(ACTIVATION_PROPERTY, "ACTIVE")
+            System.setProperty(BACKEND_PROPERTY, "PERSISTENT_GRAPHITE_VULKAN")
             return true
         }
 
@@ -59,6 +60,7 @@ object GraphiteRuntimeBootstrap {
                 }
 
                 System.setProperty(ACTIVATION_PROPERTY, "ACTIVE")
+                System.setProperty(BACKEND_PROPERTY, "PERSISTENT_GRAPHITE_VULKAN")
                 true
             } catch (t: Throwable) {
                 System.setProperty(
@@ -72,4 +74,6 @@ object GraphiteRuntimeBootstrap {
 
     private const val ACTIVATION_PROPERTY =
         "letsplot.compose.graphite.runtime.activation"
+    private const val BACKEND_PROPERTY =
+        "letsplot.compose.graphite.runtime.backend"
 }
