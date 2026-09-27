@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
 import org.jetbrains.letsPlot.android.canvas.AndroidCanvasPeer
 import org.jetbrains.letsPlot.android.canvas.AndroidContext2d
@@ -67,6 +68,7 @@ fun PlotPanelComposeCanvas(
     }
 
     val density = LocalDensity.current.density
+    val uriHandler = LocalUriHandler.current
     val composeMouseEventMapper = remember { ComposeMouseEventMapper() }
     // Update density on each recomposition to handle monitor DPI changes (e.g., drag between HIDPI/regular monitor)
 
@@ -99,11 +101,22 @@ fun PlotPanelComposeCanvas(
         }
     }
 
-    val plotComponentRegistrations = remember(plotDrawable) {
+    val plotComponentRegistrations = remember(plotDrawable, uriHandler) {
+        plotDrawable.onHrefClick { uri ->
+            try {
+                uriHandler.openUri(uri)
+            } catch (e: Exception) {
+                LOG.error(e) { "Failed to open link: $uri (${e.message})" }
+            }
+        }
+
         CompositeRegistration(
             // trigger recomposition on repaint request
             plotDrawable.onRepaintRequested { redrawTrigger++ },
-            plotDrawable.mapToCanvas(androidCanvasPeer)
+            plotDrawable.mapToCanvas(androidCanvasPeer),
+            Registration.onRemove {
+                plotDrawable.onHrefClick(handler = {})
+            }
         )
     }
     val dispatcherOwner = remember(plotDrawable, figureModel) {
