@@ -20,6 +20,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import kotlinx.browser.window
 import org.jetbrains.letsPlot.commons.geometry.DoubleVector
 import org.jetbrains.letsPlot.commons.logging.PortableLogging
 import org.jetbrains.letsPlot.commons.registration.CompositeRegistration
@@ -27,6 +28,7 @@ import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.letsPlot.compose.canvas.SkiaCanvasPeer
 import org.jetbrains.letsPlot.compose.canvas.SkiaContext2d
 import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
+import org.jetbrains.letsPlot.core.spec.Option.Meta.Kind.GG_TOOLBAR
 import org.jetbrains.letsPlot.core.spec.config.PlotConfig
 import org.jetbrains.letsPlot.core.spec.front.SpecOverrideUtil.applySpecOverride
 import org.jetbrains.letsPlot.core.util.MonolithicCommon.processRawSpecs
@@ -136,9 +138,9 @@ fun PlotPanelComposeCanvas(
     }
 
     Column(modifier = finalModifier) {
-        //if (GG_TOOLBAR in processedPlotSpec) {
-        //    PlotToolbar(figureModel)
-        //}
+        if (GG_TOOLBAR in processedPlotSpec) {
+            PlotToolbar(figureModel)
+        }
 
         Box(
             modifier = finalModifier
@@ -230,10 +232,9 @@ fun PlotPanelComposeCanvas(
 }
 
 private fun browseLink(string: String) {
-    //try {
-    //    val uri = URI(string)
-    //    Desktop.getDesktop().browse(uri)
-    //} catch (e: Exception) {
-    //    LOG.error(e) { "Failed to open link: $string (${e.message})" }
-    //}
+    try {
+        window.open(string, "_blank")
+    } catch (e: Exception) {
+        LOG.error(e) { "Failed to open link: $string (${e.message})" }
+    }
 }
