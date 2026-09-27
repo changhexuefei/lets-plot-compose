@@ -162,7 +162,8 @@ kotlin {
 
 tasks.matching { task ->
     task.name == "compileKotlinDesktop" ||
-        task.name == "compileTestKotlinDesktop"
+        task.name == "compileTestKotlinDesktop" ||
+        task.name == "desktopSourcesJar"
 }.configureEach {
     dependsOn(generateDesktopGraphiteCompatibilityMarker)
 }
