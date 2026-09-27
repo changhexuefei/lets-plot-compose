@@ -28,6 +28,8 @@ private const val PERFORMANCE_WINDOW_HEIGHT = 550
 private const val PERFORMANCE_WARMUP_ROUNDS = 2
 private const val PERFORMANCE_MEASURED_ROUNDS = 4
 private const val PERFORMANCE_INTERACTION_TIMEOUT_MS = 5_000L
+private const val PERFORMANCE_PAN_STEPS = 8
+private const val PERFORMANCE_PAN_STEP_DELAY_MS = 25L
 private const val PERFORMANCE_READY_NON_WHITE = 80
 private const val PERFORMANCE_VISIBLE_CHANGE_NON_WHITE = 35
 
@@ -71,6 +73,7 @@ fun main() {
         "measurement.kind" to "REAL_WINDOW_INPUT_TO_VISIBLE_CHANGE",
         "measurement.policy" to "OBSERVATIONAL_ONLY",
         "interaction.input" to "AWT_ROBOT_REAL_WINDOW",
+        "pan.measurement" to "FINAL_STAGED_DRAG_STEP_TO_VISIBLE_CHANGE",
         "warmup.rounds" to PERFORMANCE_WARMUP_ROUNDS.toString(),
         "measured.rounds" to PERFORMANCE_MEASURED_ROUNDS.toString(),
         "measured.interactions" to (PERFORMANCE_MEASURED_ROUNDS * 2).toString(),
@@ -329,18 +332,36 @@ private suspend fun measurePanLatency(
 ): Double {
     val robot = Robot(window.graphicsConfiguration.device).apply { autoDelay = 5 }
     val center = preparePointerAtCenter(window, robot)
-    val baselineSignature = specOverrideSignature(figureModel)
-    val baselineFingerprint = fingerprintWindow(window, robot).hash
-    val started = System.nanoTime()
-
     val targetX = center.first + 55 * direction
     val targetY = center.second + 30 * direction
+
+    var baselineSignature = ""
+    var baselineFingerprint = 0L
+    var started = 0L
+
     robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
     try {
+        for (step in 1 until PERFORMANCE_PAN_STEPS) {
+            val x = center.first + (targetX - center.first) * step / PERFORMANCE_PAN_STEPS
+            val y = center.second + (targetY - center.second) * step / PERFORMANCE_PAN_STEPS
+            robot.mouseMove(x, y)
+            delay(PERFORMANCE_PAN_STEP_DELAY_MS)
+        }
+
+        // Match the proven staged drag path from the interaction stress probe.
+        // Measure only the final incremental drag step so the fixed gesture
+        // synthesis cost does not dominate the Native-vs-Graphite comparison.
+        delay(40)
+        baselineSignature = specOverrideSignature(figureModel)
+        baselineFingerprint = fingerprintWindow(window, robot).hash
+        started = System.nanoTime()
         robot.mouseMove(targetX, targetY)
+        delay(PERFORMANCE_PAN_STEP_DELAY_MS)
     } finally {
         robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
     }
+
+    check(started != 0L) { "Pan latency timer was not started" }
 
     return waitForVisibleInteractionChange(
         window = window,
