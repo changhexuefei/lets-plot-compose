@@ -14,6 +14,10 @@ internal class PlotFigureModelDispatcherOwner(
     private var ownedDispatcher: ToolEventDispatcher? = null
 
     fun bind(dispatcher: ToolEventDispatcher) {
+        if (ownedDispatcher === dispatcher && figureModel.toolEventDispatcher === dispatcher) {
+            return
+        }
+
         figureModel.toolEventDispatcher = dispatcher
         ownedDispatcher = dispatcher
     }
