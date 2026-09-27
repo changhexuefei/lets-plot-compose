@@ -17,6 +17,23 @@ application targeting Desktop, Android, and WasmJS.
 
 For more details see [Compose multiplatform compatibility and versioning overview](https://www.jetbrains.com/help/kotlin-multiplatform-dev/compose-compatibility-and-versioning.html).
 
+### Desktop Graphite Readiness
+
+The production Desktop renderer remains **Native Canvas**.
+
+This fork also carries an **experimental, explicit opt-in Graphite readiness baseline** used by CI to validate the future Compose Desktop/Skiko Graphite path. The frozen verified matrix is:
+
+- Windows x64
+- JDK 21
+- Compose Multiplatform 1.13.0-alpha01
+- Skiko 0.153.0
+- optional probe-only Graphite/Vulkan runtime
+- `letsplot.compose.desktop.renderPath=graphite-offscreen`
+
+The optional runtime is not part of the normal production dependency graph. Normal production builds are marked Graphite-ineligible and continue on Native Canvas. Unsupported or unverified platform/version combinations are blocked before Graphite/Vulkan initialization; missing runtime or provider failures fall back to Native Canvas.
+
+This baseline is regression evidence, not a commitment to make Graphite the default renderer. Further adoption is intentionally paused until the upstream Compose/Skiko baseline changes.
+
 
 ![Splash](img-2.png)
 
