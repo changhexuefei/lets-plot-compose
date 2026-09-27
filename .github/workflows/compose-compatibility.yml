@@ -2881,7 +2881,7 @@ jobs:
 
           @"
           schema=1
-          result=COMPOSE_PLOTPANEL_GRAPHITE_READINESS_BASELINE_COMPLETE
+          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE_CAPABLE
           request.path=graphite-offscreen
           failure.stage=POST_GPU_RESOURCE_INITIALIZATION_PRE_SUBMIT
           failure.type=java.lang.IllegalStateException
@@ -3379,7 +3379,7 @@ jobs:
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE_CAPABLE
+          result=COMPOSE_PLOTPANEL_GRAPHITE_READINESS_BASELINE_COMPLETE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
