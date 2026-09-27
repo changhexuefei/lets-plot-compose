@@ -21,6 +21,7 @@ class DesktopRenderPathTest {
     @AfterTest
     fun resetOptionalRuntimeBootstrap() {
         DesktopOffscreenRuntimeBootstrap.resetForTests()
+        DesktopOffscreenFailureState.resetForTests()
     }
 
     @Test
@@ -124,6 +125,71 @@ class DesktopRenderPathTest {
             registration?.dispose()
         }
 
+        assertNull(DesktopOffscreenRendererRegistry.current())
+    }
+
+    @Test
+    fun offscreenProviderPaintFailureFallsBackAndQuarantinesProvider() {
+        assertNull(DesktopOffscreenRendererRegistry.current())
+
+        var activationCount = 0
+        var providerPaintCount = 0
+        var nativePaintCount = 0
+        var disposeCount = 0
+        var registration: Registration? = null
+
+        DesktopOffscreenRuntimeBootstrap.resetForTests {
+            activationCount++
+            registration = DesktopOffscreenRendererRegistry.install(
+                lifecycleRenderer(
+                    onPaint = {
+                        providerPaintCount++
+                        error("Injected offscreen provider paint failure")
+                    },
+                    onDispose = {
+                        disposeCount++
+                    }
+                )
+            )
+            true
+        }
+
+        try {
+            Surface.makeRasterN32Premul(32, 32).use { surface ->
+                repeat(2) {
+                    val effective = paintDesktopPlot(
+                        canvas = surface.canvas,
+                        width = 32,
+                        height = 32,
+                        density = 1.0,
+                        plotPosition = DoubleVector.ZERO,
+                        requestedPath = DesktopRenderPath.OFFSCREEN_COMPOSITE
+                    ) {
+                        nativePaintCount++
+                    }
+
+                    assertEquals(DesktopRenderPath.NATIVE_CANVAS, effective)
+                }
+            }
+
+            assertEquals(1, activationCount)
+            assertEquals(1, providerPaintCount)
+            assertEquals(2, nativePaintCount)
+            assertEquals(1, disposeCount)
+            assertNull(DesktopOffscreenRendererRegistry.current())
+            assertEquals(
+                "java.lang.IllegalStateException",
+                System.getProperty(DESKTOP_OFFSCREEN_FAILURE_PROPERTY)
+            )
+            assertEquals(
+                "1",
+                System.getProperty(DESKTOP_OFFSCREEN_FAILURE_COUNT_PROPERTY)
+            )
+        } finally {
+            registration?.dispose()
+        }
+
+        assertEquals(1, disposeCount)
         assertNull(DesktopOffscreenRendererRegistry.current())
     }
 
