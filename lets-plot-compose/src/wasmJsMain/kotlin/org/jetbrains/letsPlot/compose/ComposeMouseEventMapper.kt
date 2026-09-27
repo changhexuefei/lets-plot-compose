@@ -11,7 +11,6 @@ import org.jetbrains.letsPlot.commons.event.MouseEventSpec.*
 import org.jetbrains.letsPlot.commons.geometry.Vector
 import org.jetbrains.letsPlot.commons.intern.observable.event.EventHandler
 import org.jetbrains.letsPlot.commons.registration.Registration
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 
@@ -77,13 +76,8 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                         mouseEventPeer.dispatch(MOUSE_RELEASED, mouseEvent)
                     }
 
-                    PointerEventType.Move -> {
-                        if (change.pressed) {
-                            mouseEventPeer.dispatch(MOUSE_DRAGGED, mouseEvent)
-                        } else {
-                            mouseEventPeer.dispatch(MOUSE_MOVED, mouseEvent)
-                        }
-                    }
+                    PointerEventType.Move ->
+                        mouseEventPeer.dispatch(PointerInteractionContract.moveEventSpec(change.pressed), mouseEvent)
 
                     PointerEventType.Enter -> {
                         mouseEventPeer.dispatch(MOUSE_ENTERED, mouseEvent)
@@ -95,12 +89,10 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
 
                     PointerEventType.Scroll -> {
                         val scrollDelta = change.scrollDelta
-                        // Use the dominant scroll direction (x or y, whichever has larger absolute value)
-                        val scrollAmount = if (abs(scrollDelta.x) > abs(scrollDelta.y)) {
-                            scrollDelta.x.toDouble()
-                        } else {
-                            scrollDelta.y.toDouble()
-                        }
+                        val scrollAmount = PointerInteractionContract.dominantScrollAmount(
+                            x = scrollDelta.x.toDouble(),
+                            y = scrollDelta.y.toDouble()
+                        )
 
                         val wheelMouseEvent = MouseWheelEvent(
                             x = vector.x,
@@ -133,7 +125,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     }
 
     private fun extractModifiers(event: PointerEvent): KeyModifiers {
-        return KeyModifiers(
+        return PointerInteractionContract.keyModifiers(
             isCtrl = event.keyboardModifiers.isCtrlPressed,
             isAlt = event.keyboardModifiers.isAltPressed,
             isShift = event.keyboardModifiers.isShiftPressed,
