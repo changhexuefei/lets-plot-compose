@@ -25,6 +25,10 @@ internal enum class DesktopRenderPath {
     OFFSCREEN_COMPOSITE
 }
 
+private class DesktopOffscreenPaintCallbackException(
+    val original: Throwable
+) : RuntimeException(original)
+
 internal fun interface DesktopOffscreenRenderer {
     fun paint(
         targetCanvas: Canvas,
@@ -216,9 +220,21 @@ internal fun paintDesktopPlot(
                     height = height,
                     density = density,
                     plotPosition = plotPosition,
-                    paint = paint
+                    paint = { context ->
+                        try {
+                            paint(context)
+                        } catch (t: Throwable) {
+                            when (t) {
+                                is VirtualMachineError,
+                                is ThreadDeath -> throw t
+                                else -> throw DesktopOffscreenPaintCallbackException(t)
+                            }
+                        }
+                    }
                 )
                 return DesktopRenderPath.OFFSCREEN_COMPOSITE
+            } catch (callbackFailure: DesktopOffscreenPaintCallbackException) {
+                throw callbackFailure.original
             } catch (t: Throwable) {
                 when (t) {
                     is VirtualMachineError,
