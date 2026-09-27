@@ -33,7 +33,29 @@ object GraphiteRuntimeBootstrap {
         return synchronized(lock) {
             registration?.let {
                 System.setProperty(ACTIVATION_PROPERTY, "ACTIVE")
+                System.setProperty(BACKEND_PROPERTY, "PERSISTENT_GRAPHITE_VULKAN")
                 return@synchronized true
+            }
+
+            val compatibility = try {
+                GraphiteRuntimeCompatibility.evaluateActual()
+            } catch (t: Throwable) {
+                System.setProperty(COMPATIBILITY_PROPERTY, "BLOCKED")
+                System.setProperty(COMPATIBILITY_REASON_PROPERTY, "MARKER_READ_FAILURE")
+                System.setProperty(
+                    ACTIVATION_PROPERTY,
+                    "BLOCKED:MARKER_READ_FAILURE"
+                )
+                return@synchronized false
+            }
+
+            publishCompatibility(compatibility)
+            if (!compatibility.allowed) {
+                System.setProperty(
+                    ACTIVATION_PROPERTY,
+                    "BLOCKED:" + compatibility.reason
+                )
+                return@synchronized false
             }
 
             try {
@@ -72,8 +94,52 @@ object GraphiteRuntimeBootstrap {
         }
     }
 
+    private fun publishCompatibility(
+        decision: GraphiteCompatibilityDecision
+    ) {
+        System.setProperty(
+            COMPATIBILITY_PROPERTY,
+            if (decision.allowed) "PASS" else "BLOCKED"
+        )
+        System.setProperty(COMPATIBILITY_REASON_PROPERTY, decision.reason)
+        System.setProperty(
+            COMPATIBILITY_COMPOSE_PROPERTY,
+            decision.input.markerComposeVersion
+        )
+        System.setProperty(
+            COMPATIBILITY_SKIKO_PROPERTY,
+            decision.input.markerSkikoVersion
+        )
+        System.setProperty(
+            COMPATIBILITY_PROFILE_PROPERTY,
+            decision.input.markerProfile
+        )
+        System.setProperty(
+            COMPATIBILITY_PLATFORM_PROPERTY,
+            decision.input.osName + "/" + decision.input.osArch
+        )
+        System.setProperty(
+            COMPATIBILITY_JAVA_PROPERTY,
+            decision.input.javaMajor.toString()
+        )
+    }
+
     private const val ACTIVATION_PROPERTY =
         "letsplot.compose.graphite.runtime.activation"
     private const val BACKEND_PROPERTY =
         "letsplot.compose.graphite.runtime.backend"
+    private const val COMPATIBILITY_PROPERTY =
+        "letsplot.compose.graphite.runtime.compatibility"
+    private const val COMPATIBILITY_REASON_PROPERTY =
+        "letsplot.compose.graphite.runtime.compatibility.reason"
+    private const val COMPATIBILITY_COMPOSE_PROPERTY =
+        "letsplot.compose.graphite.runtime.compatibility.compose"
+    private const val COMPATIBILITY_SKIKO_PROPERTY =
+        "letsplot.compose.graphite.runtime.compatibility.skiko"
+    private const val COMPATIBILITY_PROFILE_PROPERTY =
+        "letsplot.compose.graphite.runtime.compatibility.profile"
+    private const val COMPATIBILITY_PLATFORM_PROPERTY =
+        "letsplot.compose.graphite.runtime.compatibility.platform"
+    private const val COMPATIBILITY_JAVA_PROPERTY =
+        "letsplot.compose.graphite.runtime.compatibility.java"
 }
