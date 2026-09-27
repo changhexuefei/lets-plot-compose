@@ -42,6 +42,9 @@ application {
 }
 
 val smokeRenderApi = providers.environmentVariable("SMOKE_RENDER_API").orElse("SOFTWARE")
+val smokeDesktopRenderPath = providers.environmentVariable("SMOKE_DESKTOP_RENDER_PATH").orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
 val smokeSkikoVersion = providers.environmentVariable("SMOKE_SKIKO_VERSION").orNull
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
@@ -60,4 +63,7 @@ if (smokeSkikoVersion != null) {
 tasks.withType<JavaExec>().configureEach {
     systemProperty("java.awt.headless", "false")
     systemProperty("skiko.renderApi", smokeRenderApi.get())
+    smokeDesktopRenderPath?.let {
+        systemProperty("letsplot.compose.desktop.renderPath", it)
+    }
 }
