@@ -108,6 +108,9 @@ jobs:
           test -f "$common_svg"
           grep -q "PlotToolbar(figureModel)" "$android_canvas"
           grep -q "PlotToolbar(figureModel)" "$wasm_canvas"
+          grep -q "LocalUriHandler.current" "$android_canvas"
+          grep -q "uriHandler.openUri(uri)" "$android_canvas"
+          grep -q 'plotDrawable.onHrefClick(handler = {})' "$android_canvas"
           grep -q 'window.open(string, "_blank")' "$wasm_canvas"
 
           evidence_dir="compose/lets-plot-compose/build/ui-parity"
@@ -125,6 +128,8 @@ jobs:
           toolbar.wasm=ENABLED
           toolbar.figure_model_lifecycle=KEYED
           hyperlink.desktop=ENABLED
+          hyperlink.android=COMPOSE_URI_HANDLER
+          hyperlink.android.lifecycle=DISPOSED
           hyperlink.wasm=BROWSER_WINDOW_OPEN
           public.api.change=NONE
           production.renderer.default=NATIVE_CANVAS
