@@ -3097,6 +3097,8 @@ jobs:
           require_line "$graphite_provider" "failure.paint.layout_preserved=PASS"
           require_line "$graphite_provider" "failure.paint.recovery=PASS"
           require_line "$graphite_provider" "failure.resize.create.injected=PASS"
+          require_line "$graphite_provider" "failure.resize.scope=BACKEND_INTERNAL_RECOVERY"
+          require_line "$graphite_provider" "failure.resize.production_boundary=BYPASSED"
           require_line "$graphite_provider" "failure.resize.target_released=PASS"
           require_line "$graphite_provider" "failure.resize.caught=PASS"
           require_line "$graphite_provider" "failure.resize.no_stale_target=PASS"
