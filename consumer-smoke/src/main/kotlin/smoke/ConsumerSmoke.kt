@@ -222,6 +222,38 @@ fun main() {
                             "graphite.runtime.backend=" +
                                 (System.getProperty("letsplot.compose.graphite.runtime.backend") ?: "ABSENT")
                         )
+                        appendLine(
+                            "desktop.offscreen.failure=" +
+                                (System.getProperty("letsplot.compose.desktop.offscreen.failure") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "desktop.offscreen.failureCount=" +
+                                (System.getProperty("letsplot.compose.desktop.offscreen.failureCount") ?: "0")
+                        )
+                        appendLine(
+                            "graphite.runtime.injectedFailure=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.injectedFailure") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.paintAttempts=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.paintAttempts") ?: "0")
+                        )
+                        appendLine(
+                            "graphite.runtime.contextCreated=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.contextCreated") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.targetCreated=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.targetCreated") ?: "ABSENT")
+                        )
+                        appendLine(
+                            "graphite.runtime.disposeCount=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.disposeCount") ?: "0")
+                        )
+                        appendLine(
+                            "graphite.runtime.cleanup=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.cleanup") ?: "ABSENT")
+                        )
                         appendLine("checks=render,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
                     }
                 )

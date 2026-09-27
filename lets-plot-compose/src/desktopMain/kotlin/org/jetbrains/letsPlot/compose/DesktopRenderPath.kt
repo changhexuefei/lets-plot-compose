@@ -15,10 +15,19 @@ internal const val DESKTOP_RENDER_PATH_PROPERTY = "letsplot.compose.desktop.rend
 private const val GRAPHITE_RUNTIME_BOOTSTRAP_CLASS =
     "org.jetbrains.letsPlot.compose.graphite.runtime.GraphiteRuntimeBootstrap"
 
+internal const val DESKTOP_OFFSCREEN_FAILURE_PROPERTY =
+    "letsplot.compose.desktop.offscreen.failure"
+internal const val DESKTOP_OFFSCREEN_FAILURE_COUNT_PROPERTY =
+    "letsplot.compose.desktop.offscreen.failureCount"
+
 internal enum class DesktopRenderPath {
     NATIVE_CANVAS,
     OFFSCREEN_COMPOSITE
 }
+
+private class DesktopOffscreenPaintCallbackException(
+    val original: Throwable
+) : RuntimeException(original)
 
 internal fun interface DesktopOffscreenRenderer {
     fun paint(
@@ -42,24 +51,41 @@ internal fun interface DesktopOffscreenRenderer {
 internal object DesktopOffscreenRendererRegistry {
     private val lock = Any()
     private var renderer: DesktopOffscreenRenderer? = null
+    private val disposedRenderers =
+        java.util.Collections.newSetFromMap(
+            java.util.IdentityHashMap<DesktopOffscreenRenderer, Boolean>()
+        )
 
     fun install(renderer: DesktopOffscreenRenderer): Registration {
         synchronized(lock) {
             this.renderer = renderer
+            disposedRenderers.remove(renderer)
         }
 
         return Registration.onRemove {
-            synchronized(lock) {
-                if (this.renderer === renderer) {
-                    this.renderer = null
-                }
-            }
-            renderer.dispose()
+            disposeOnce(renderer)
         }
     }
 
     fun current(): DesktopOffscreenRenderer? {
         return synchronized(lock) { renderer }
+    }
+
+    fun invalidate(renderer: DesktopOffscreenRenderer) {
+        disposeOnce(renderer)
+    }
+
+    private fun disposeOnce(renderer: DesktopOffscreenRenderer) {
+        val shouldDispose = synchronized(lock) {
+            if (this.renderer === renderer) {
+                this.renderer = null
+            }
+            disposedRenderers.add(renderer)
+        }
+
+        if (shouldDispose) {
+            renderer.dispose()
+        }
     }
 }
 
@@ -118,6 +144,34 @@ internal object DesktopOffscreenRuntimeBootstrap {
     }
 }
 
+internal object DesktopOffscreenFailureState {
+    private val lock = Any()
+
+    fun record(error: Throwable) {
+        synchronized(lock) {
+            val current =
+                System.getProperty(DESKTOP_OFFSCREEN_FAILURE_COUNT_PROPERTY)
+                    ?.toIntOrNull()
+                    ?: 0
+            System.setProperty(
+                DESKTOP_OFFSCREEN_FAILURE_COUNT_PROPERTY,
+                (current + 1).toString()
+            )
+            System.setProperty(
+                DESKTOP_OFFSCREEN_FAILURE_PROPERTY,
+                error::class.qualifiedName ?: error::class.simpleName ?: "Throwable"
+            )
+        }
+    }
+
+    internal fun resetForTests() {
+        synchronized(lock) {
+            System.clearProperty(DESKTOP_OFFSCREEN_FAILURE_PROPERTY)
+            System.clearProperty(DESKTOP_OFFSCREEN_FAILURE_COUNT_PROPERTY)
+        }
+    }
+}
+
 internal fun resolveDesktopRenderPath(
     configuredValue: String? = System.getProperty(DESKTOP_RENDER_PATH_PROPERTY)
 ): DesktopRenderPath {
@@ -159,15 +213,38 @@ internal fun paintDesktopPlot(
                 }
 
         renderer?.let {
-            it.paint(
-                targetCanvas = canvas,
-                width = width,
-                height = height,
-                density = density,
-                plotPosition = plotPosition,
-                paint = paint
-            )
-            return DesktopRenderPath.OFFSCREEN_COMPOSITE
+            try {
+                it.paint(
+                    targetCanvas = canvas,
+                    width = width,
+                    height = height,
+                    density = density,
+                    plotPosition = plotPosition,
+                    paint = { context ->
+                        try {
+                            paint(context)
+                        } catch (t: Throwable) {
+                            when (t) {
+                                is VirtualMachineError,
+                                is ThreadDeath -> throw t
+                                else -> throw DesktopOffscreenPaintCallbackException(t)
+                            }
+                        }
+                    }
+                )
+                return DesktopRenderPath.OFFSCREEN_COMPOSITE
+            } catch (callbackFailure: DesktopOffscreenPaintCallbackException) {
+                throw callbackFailure.original
+            } catch (t: Throwable) {
+                when (t) {
+                    is VirtualMachineError,
+                    is ThreadDeath -> throw t
+                    else -> {
+                        DesktopOffscreenFailureState.record(t)
+                        DesktopOffscreenRendererRegistry.invalidate(it)
+                    }
+                }
+            }
         }
     }
 
