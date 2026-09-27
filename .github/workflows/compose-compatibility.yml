@@ -2881,7 +2881,7 @@ jobs:
 
           @"
           schema=1
-          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE_CAPABLE
+          result=COMPOSE_PLOTPANEL_GRAPHITE_READINESS_BASELINE_COMPLETE
           request.path=graphite-offscreen
           failure.stage=POST_GPU_RESOURCE_INITIALIZATION_PRE_SUBMIT
           failure.type=java.lang.IllegalStateException
@@ -3435,6 +3435,18 @@ jobs:
           graphite.runtime_failure_subsequent_native=PASS
           graphite.runtime_failure_gpu_cleanup=PASS
           graphite.runtime_failure_full_interaction_smoke=PASS
+          graphite.runtime_compatibility_gate=PASS
+          graphite.runtime_compatibility_verified_os=Windows
+          graphite.runtime_compatibility_verified_arch=x86_64
+          graphite.runtime_compatibility_verified_jdk=21
+          graphite.runtime_compatibility_verified_compose=1.13.0-alpha01
+          graphite.runtime_compatibility_verified_skiko=0.153.0
+          graphite.runtime_compatibility_verified_profile=WINDOWS_X64_JDK21_GRAPHITE_0_153
+          graphite.runtime_unverified_activation=BLOCK
+          graphite.production_frontend_eligible=FALSE
+          graphite.recompiled_frontend_eligible=TRUE
+          baseline.status=FROZEN
+          baseline.scope=WINDOWS_X64_JDK21_COMPOSE_1_13_0_ALPHA01_SKIKO_0_153_0
           plotpanel.resize=PASS
           plotpanel.recomposition=PASS
           plotpanel.figure_model_dispose=PASS
@@ -3468,8 +3480,9 @@ jobs:
           graphite.backend.dispose=PASS
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
-          renderer.adoption=SHADOW_OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_COMPATIBILITY_GATE_EVIDENCE
+          production.renderer.default=NATIVE_CANVAS
+          renderer.adoption=EXPERIMENTAL_OPT_IN
+          next.required=NONE_UNTIL_UPSTREAM_BASELINE_CHANGE
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
