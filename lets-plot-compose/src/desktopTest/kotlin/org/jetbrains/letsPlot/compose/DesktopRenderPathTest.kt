@@ -15,6 +15,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class DesktopRenderPathTest {
@@ -125,6 +126,53 @@ class DesktopRenderPathTest {
             registration?.dispose()
         }
 
+        assertNull(DesktopOffscreenRendererRegistry.current())
+    }
+
+    @Test
+    fun plotPaintCallbackFailurePropagatesWithoutQuarantiningProvider() {
+        assertNull(DesktopOffscreenRendererRegistry.current())
+
+        var providerPaintCount = 0
+        var disposeCount = 0
+        val renderer = lifecycleRenderer(
+            onPaint = {
+                providerPaintCount++
+            },
+            onDispose = {
+                disposeCount++
+            }
+        )
+        val registration = DesktopOffscreenRendererRegistry.install(renderer)
+
+        try {
+            Surface.makeRasterN32Premul(32, 32).use { surface ->
+                val failure = assertFailsWith<IllegalStateException> {
+                    paintDesktopPlot(
+                        canvas = surface.canvas,
+                        width = 32,
+                        height = 32,
+                        density = 1.0,
+                        plotPosition = DoubleVector.ZERO,
+                        requestedPath = DesktopRenderPath.OFFSCREEN_COMPOSITE
+                    ) {
+                        error("Synthetic plot paint callback failure")
+                    }
+                }
+
+                assertEquals("Synthetic plot paint callback failure", failure.message)
+            }
+
+            assertEquals(1, providerPaintCount)
+            assertEquals(0, disposeCount)
+            assertTrue(DesktopOffscreenRendererRegistry.current() === renderer)
+            assertNull(System.getProperty(DESKTOP_OFFSCREEN_FAILURE_PROPERTY))
+            assertNull(System.getProperty(DESKTOP_OFFSCREEN_FAILURE_COUNT_PROPERTY))
+        } finally {
+            registration.dispose()
+        }
+
+        assertEquals(1, disposeCount)
         assertNull(DesktopOffscreenRendererRegistry.current())
     }
 
