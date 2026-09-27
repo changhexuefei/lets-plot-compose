@@ -38,7 +38,7 @@ The current cross-platform regression baseline also verifies the following behav
 | Shared pointer drag / move / wheel interaction contract | Yes | Yes | Yes |
 | Ctrl / Alt / Shift / Meta interaction modifiers | Yes | Yes | Yes |
 | Computation-message redispatch after plot-spec replacement | Yes | Yes | Yes |
-| Hyperlink navigation | Yes | Not yet part of the parity baseline | Yes |
+| Hyperlink navigation | Yes | Yes | Yes |
 
 The toolbar implementation and interaction contract are shared from common code where practical, while platform adapters retain only the platform-specific event and navigation integration. The compatibility CI compiles all three targets and emits dedicated regression evidence for these contracts.
 
