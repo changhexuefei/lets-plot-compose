@@ -270,9 +270,16 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                 val adjustedY = ((position.y / density) - offsetY).roundToInt()
                 val vector = Vector(adjustedX, adjustedY)
 
-                val mouseEvent = when {
-                    change.pressed -> MouseEvent.leftButton(vector)
-                    else -> MouseEvent.noButton(vector)
+                val modifiers = PointerInteractionContract.keyModifiers(
+                    isCtrl = event.keyboardModifiers.isCtrlPressed,
+                    isAlt = event.keyboardModifiers.isAltPressed,
+                    isShift = event.keyboardModifiers.isShiftPressed,
+                    isMeta = event.keyboardModifiers.isMetaPressed
+                )
+                val mouseEvent = if (change.pressed) {
+                    MouseEvent(vector.x, vector.y, Button.LEFT, modifiers)
+                } else {
+                    MouseEvent(vector.x, vector.y, Button.NONE, modifiers)
                 }
 
                 when (event.type) {
@@ -291,7 +298,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                     PointerEventType.Release -> {
                         if (clickCount > 0 && !dragging) {
                             val pos = event.changes.first().position
-                            dispatchClick(pos, clickCount, density.toDouble())
+                            dispatchClick(pos, clickCount, density.toDouble(), modifiers)
                             if (clickCount > 1) {
                                 clickCount = 0 // Reset after a double click
                             }
@@ -302,12 +309,11 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                     }
 
                     PointerEventType.Move -> {
-                        if (change.pressed) {
-                            dragging = true
-                            mouseEventPeer.dispatch(MOUSE_DRAGGED, mouseEvent)
-                        } else {
-                            mouseEventPeer.dispatch(MOUSE_MOVED, mouseEvent)
-                        }
+                        dragging = change.pressed
+                        mouseEventPeer.dispatch(
+                            PointerInteractionContract.moveEventSpec(change.pressed),
+                            mouseEvent
+                        )
                     }
 
                     PointerEventType.Enter -> {
@@ -324,8 +330,11 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                             x = vector.x,
                             y = vector.y,
                             button = Button.NONE,
-                            modifiers = KeyModifiers.emptyModifiers(),
-                            scrollAmount = scrollDelta.y.toDouble()
+                            modifiers = modifiers,
+                            scrollAmount = PointerInteractionContract.dominantScrollAmount(
+                                x = scrollDelta.x.toDouble(),
+                                y = scrollDelta.y.toDouble()
+                            )
                         )
                         mouseEventPeer.dispatch(MOUSE_WHEEL_ROTATED, wheelMouseEvent)
                     }
@@ -334,14 +343,22 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
         }
     }
 
-    private fun dispatchClick(position: Offset, clickCount: Int, density: Double) {
+    private fun dispatchClick(
+        position: Offset,
+        clickCount: Int,
+        density: Double,
+        modifiers: KeyModifiers
+    ) {
         // Convert logical pixel coordinates to physical pixel coordinates for SVG interaction
         val adjustedX = ((position.x / density) - offsetX).roundToInt()
         val adjustedY = ((position.y / density) - offsetY).roundToInt()
         val vector = Vector(adjustedX, adjustedY)
-        val mouseEvent = MouseEvent.leftButton(vector)
+        val mouseEvent = MouseEvent(vector.x, vector.y, Button.LEFT, modifiers)
 
-        mouseEventPeer.dispatch(MOUSE_MOVED, MouseEvent.noButton(vector)) // to show tooltip
+        mouseEventPeer.dispatch(
+            MOUSE_MOVED,
+            MouseEvent(vector.x, vector.y, Button.NONE, modifiers)
+        ) // to show tooltip
 
         when (clickCount) {
             1 -> mouseEventPeer.dispatch(MOUSE_CLICKED, mouseEvent)
