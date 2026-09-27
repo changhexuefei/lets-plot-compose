@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Compatibility
+
+Current development baseline:
+- Kotlin 2.4.20
+- Compose Multiplatform 1.12.1
+- Lets-Plot Kotlin API 4.15.1-SNAPSHOT
+- Lets-Plot Multiplatform 4.11.1-SNAPSHOT
+
+### Added
+
+- Shared default plot toolbar on Desktop, Android, and WasmJS.
+- WasmJS hyperlink navigation using the browser window.
+- Dedicated multiplatform UI-parity and interaction-contract CI evidence.
+
+### Changed
+
+- Pointer interaction semantics are now locked to one common cross-platform contract for drag, move, wheel-axis selection, and Ctrl/Alt/Shift/Meta propagation.
+- FigureModel dispatcher ownership and toolbar lifecycle are now keyed to the active figure model to prevent stale cleanup from detaching newer bindings.
+- Computation messages are dispatched once per active raw plot spec and are re-enabled when the plot spec changes.
+
+### Fixed
+
+- Android pressed-pointer movement now reports drag semantics consistently with Desktop and WasmJS.
+- Android no longer discards keyboard modifiers or always prefers the vertical wheel delta.
+- Reusing one PlotPanel for a different raw spec no longer suppresses computation messages after the first figure.
+- Toolbar SVG icons now use common Compose ImageVector rendering instead of a Desktop/Skiko-only SVG decoder.
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). All scales should have the 'format' parameter.
 
