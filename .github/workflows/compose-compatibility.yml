@@ -2539,6 +2539,53 @@ jobs:
             "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" `
             clean publishRuntimeBundlePublicationToProbeRepository --stacktrace
 
+      - name: Verify Graphite runtime compatibility matrix
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          GRAPHITE_COMPATIBILITY_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-runtime-package-probe\build\compatibility
+        run: |
+          .\gradlew.bat -p graphite-runtime-package-probe "-PskikoVersion=$env:GRAPHITE_SKIKO_VERSION" "-PlwjglVersion=$env:GRAPHITE_LWJGL_VERSION" graphiteRuntimeCompatibilityProbe --stacktrace
+          $manifest = "graphite-runtime-package-probe\build\compatibility\graphite-runtime-compatibility-matrix.txt"
+          if (!(Test-Path $manifest)) { throw "Graphite runtime compatibility matrix evidence was not created" }
+          foreach ($line in @(
+            'result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_COMPATIBILITY_GATE_EVIDENCE_CAPABLE',
+            'verified.os=Windows',
+            'verified.arch=x86_64',
+            'verified.jdk=21',
+            'verified.compose=1.13.0-alpha01',
+            'verified.skiko=0.153.0',
+            'verified.profile=WINDOWS_X64_JDK21_GRAPHITE_0_153',
+            'verified.activation=ALLOW',
+            'unverified.activation=BLOCK',
+            'case.unsupported_os=UNSUPPORTED_OS',
+            'case.unsupported_arch=UNSUPPORTED_ARCH',
+            'case.unverified_java=UNVERIFIED_JAVA',
+            'case.marker_schema=FRONTEND_MARKER_SCHEMA_MISMATCH',
+            'case.frontend_not_ready=FRONTEND_NOT_GRAPHITE_READY',
+            'case.compose_mismatch=COMPOSE_VERSION_MISMATCH',
+            'case.skiko_mismatch=SKIKO_VERSION_MISMATCH',
+            'case.profile_mismatch=COMPATIBILITY_PROFILE_MISMATCH',
+            'production.renderer.default=NATIVE_CANVAS',
+            'renderer.adoption=EXPERIMENTAL_OPT_IN',
+            'public.api.change=NONE'
+          )) {
+            if (!(Select-String -Path $manifest -Pattern ("^" + [regex]::Escape($line) + "$") -Quiet)) {
+              Get-Content $manifest
+              throw "Graphite runtime compatibility evidence missing: $line"
+            }
+          }
+
+      - name: Upload Graphite runtime compatibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-runtime-compatibility-${{ github.sha }}
+          path: compose/graphite-runtime-package-probe/build/compatibility/graphite-runtime-compatibility-matrix.txt
+          if-no-files-found: error
+          retention-days: 90
       - name: Verify Graphite runtime packaging boundary
         working-directory: compose
         shell: pwsh
