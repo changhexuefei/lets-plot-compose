@@ -38,6 +38,21 @@ class PlotFigureModelDispatcherOwnerTest {
     }
 
     @Test
+    fun bindingSameDispatcherTwiceDoesNotReinitializeFigureModel() {
+        val figureModel = PlotFigureModel()
+        val dispatcher = FakeToolEventDispatcher()
+        val owner = PlotFigureModelDispatcherOwner(figureModel)
+
+        owner.bind(dispatcher)
+        owner.bind(dispatcher)
+
+        assertSame(dispatcher, figureModel.toolEventDispatcher)
+        kotlin.test.assertEquals(1, dispatcher.initCallbackCount)
+
+        owner.release()
+    }
+
+    @Test
     fun ownerCanRebindWithoutAccumulatingStaleCleanup() {
         val figureModel = PlotFigureModel()
         val first = FakeToolEventDispatcher()
@@ -53,7 +68,12 @@ class PlotFigureModelDispatcherOwnerTest {
     }
 
     private class FakeToolEventDispatcher : ToolEventDispatcher {
-        override fun initToolEventCallback(callback: (Map<String, Any>) -> Unit) = Unit
+        var initCallbackCount: Int = 0
+            private set
+
+        override fun initToolEventCallback(callback: (Map<String, Any>) -> Unit) {
+            initCallbackCount++
+        }
 
         override fun activateInteractions(
             origin: String,
