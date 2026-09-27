@@ -38,6 +38,18 @@ class PlotFigureModelDispatcherOwnerTest {
     }
 
     @Test
+    fun bindingNullReleasesCurrentOwnedDispatcher() {
+        val figureModel = PlotFigureModel()
+        val dispatcher = FakeToolEventDispatcher()
+        val owner = PlotFigureModelDispatcherOwner(figureModel)
+
+        owner.bind(dispatcher)
+        owner.bind(null)
+
+        assertNull(figureModel.toolEventDispatcher)
+    }
+
+    @Test
     fun bindingSameDispatcherTwiceDoesNotReinitializeFigureModel() {
         val figureModel = PlotFigureModel()
         val dispatcher = FakeToolEventDispatcher()
