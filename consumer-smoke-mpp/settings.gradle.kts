@@ -15,8 +15,11 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-
+    // Do not use FAIL_ON_PROJECT_REPOS here. Kotlin/Wasm adds its Node distribution
+    // Ivy repository at task execution time; rejecting that plugin-owned repository
+    // prevents kotlinWasmNpmInstall before consumer dependencies can be validated.
+    // The smoke still has no project(":...") dependencies and Lets-Plot artifacts
+    // are resolved only from the three explicit CI Maven repositories below.
     repositories {
         fun localSmokeRepo(envName: String) {
             val repoPath = System.getenv(envName)
