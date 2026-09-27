@@ -91,7 +91,7 @@ private data class PersistentRenderTarget(
     var layout: Int = VK_IMAGE_LAYOUT_UNDEFINED
 )
 
-private data class BackendSnapshot(
+internal data class BackendSnapshot(
     val successfulFrames: Int,
     val contextCreateCount: Int,
     val targetCreateCount: Int,
@@ -104,7 +104,7 @@ private data class BackendSnapshot(
     val layoutReuseObserved: Boolean
 )
 
-private class PersistentGraphiteShadowBackend(
+internal class PersistentGraphiteShadowBackend(
     private val evidence: MutableMap<String, String>
 ) {
     private var vulkan: VulkanObjects? = null
@@ -652,7 +652,7 @@ fun main() {
     }
 }
 
-private fun specOverrideSignature(figureModel: PlotFigureModel): String =
+internal fun specOverrideSignature(figureModel: PlotFigureModel): String =
     figureModel.specOverrideState.value.specOverrides.toString()
 
 private suspend fun waitForInteractionStateChange(
@@ -815,7 +815,7 @@ private suspend fun waitForResizeFrames(
     error("PlotPanel Graphite target did not recover after window resize")
 }
 
-private fun installInternalRenderer(
+internal fun installInternalRenderer(
     backend: PersistentGraphiteShadowBackend,
     evidence: MutableMap<String, String>
 ): Registration {
@@ -858,7 +858,7 @@ private fun installInternalRenderer(
     return install.invoke(registry, proxy) as Registration
 }
 
-private fun createFigure(): Figure {
+internal fun createFigure(): Figure {
     val values = listOf(-2.0, -1.0, 0.0, 1.0, 2.0)
     return letsPlot(
         mapOf(
@@ -913,7 +913,7 @@ private fun assertScreenshotHasPlot(file: File) {
     check(sampled.size >= 8) { "PlotPanel screenshot has too few sampled colors: ${sampled.size}" }
 }
 
-private fun preloadDirectVulkan(evidence: MutableMap<String, String>) {
+internal fun preloadDirectVulkan(evidence: MutableMap<String, String>) {
     val directVulkanDll = System.getenv("GRAPHITE_VULKAN_DIRECT_DLL")
     if (!directVulkanDll.isNullOrBlank()) {
         val directDll = File(directVulkanDll).absoluteFile
