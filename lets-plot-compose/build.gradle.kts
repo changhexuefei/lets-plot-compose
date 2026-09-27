@@ -109,6 +109,7 @@ kotlin {
                 compileOnly(compose.runtime)
                 compileOnly(compose.ui)
                 compileOnly(compose.foundation)
+                compileOnly(compose.components.resources)
 
                 compileOnly("org.jetbrains.lets-plot:lets-plot-kotlin:$letsPlotKotlinVersion")
                 compileOnly("org.jetbrains.lets-plot:lets-plot-common:$letsPlotVersion")
