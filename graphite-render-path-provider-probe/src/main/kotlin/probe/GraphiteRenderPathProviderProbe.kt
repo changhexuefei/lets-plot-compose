@@ -485,8 +485,15 @@ fun main() {
 
             stage = "provider-resize-create-failure"
             provider.injectRenderTargetCreateFailureOnce()
+            evidence["failure.resize.scope"] = "BACKEND_INTERNAL_RECOVERY"
+            evidence["failure.resize.production_boundary"] = "BYPASSED"
             try {
-                renderViaSelectedProvider(prepared.drawable, RESIZED_WIDTH, RESIZED_HEIGHT)
+                renderViaProviderDirect(
+                    provider = provider,
+                    drawable = prepared.drawable,
+                    width = RESIZED_WIDTH,
+                    height = RESIZED_HEIGHT
+                )
                 error("Synthetic resize create failure did not propagate")
             } catch (failure: SyntheticProbeFailure) {
                 check(failure.message == "synthetic-render-target-create-failure") {
@@ -569,6 +576,8 @@ fun main() {
         check(evidence["failure.paint.layout_preserved"] == "PASS")
         check(evidence["failure.paint.recovery"] == "PASS")
         check(evidence["failure.resize.create.injected"] == "PASS")
+        check(evidence["failure.resize.scope"] == "BACKEND_INTERNAL_RECOVERY")
+        check(evidence["failure.resize.production_boundary"] == "BYPASSED")
         check(evidence["failure.resize.target_released"] == "PASS")
         check(evidence["failure.resize.caught"] == "PASS")
         check(evidence["failure.resize.no_stale_target"] == "PASS")
@@ -632,6 +641,35 @@ private fun renderSyntheticPaintFailure(width: Int, height: Int) {
             plotPosition = DoubleVector(PLOT_X, PLOT_Y)
         ) {
             throw SyntheticProbeFailure("synthetic-paint-failure")
+        }
+    }
+}
+
+private fun renderViaProviderDirect(
+    provider: GraphiteBackendProvider,
+    drawable: PlotCanvasDrawable,
+    width: Int,
+    height: Int
+): IntArray {
+    Surface.makeRasterN32Premul(width, height).use { surface ->
+        surface.canvas.clear(WHITE)
+
+        provider.paint(
+            targetCanvas = surface.canvas,
+            width = width,
+            height = height,
+            density = BRIDGE_DENSITY,
+            plotPosition = DoubleVector(PLOT_X, PLOT_Y)
+        ) { context ->
+            drawable.paint(context)
+        }
+
+        surface.makeImageSnapshot().use { image ->
+            Bitmap.makeFromImage(image).use { bitmap ->
+                return IntArray(width * height) { index ->
+                    bitmap.getColor(index % width, index / width)
+                }
+            }
         }
     }
 }
