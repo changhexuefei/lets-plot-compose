@@ -114,6 +114,9 @@ jobs:
           offscreen.provider.dispose=REGISTRATION_OWNED
           offscreen.runtime_bootstrap=EXPLICIT_OFFSCREEN_REQUEST_ONLY
           offscreen.runtime_missing=FALLBACK_NATIVE
+          offscreen.provider_failure=QUARANTINE_AND_FALLBACK_NATIVE
+          offscreen.provider_failure_dispose=ONCE
+          offscreen.provider_failure_retry=SUPPRESSED
           public.api.change=NONE
           production.graphite_dependency=ABSENT
           renderer.adoption=NOT_STARTED
@@ -2669,6 +2672,27 @@ jobs:
           SMOKE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-runtime-package-probe\build\activation\opt-in
         run: .\gradlew.bat -p consumer-smoke clean run --stacktrace
 
+      - name: Verify installed Graphite runtime paint failure falls back to Native
+        working-directory: compose
+        shell: pwsh
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}\consumer-bundle\core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}\consumer-bundle\kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}\compose-recompiled
+          LETS_PLOT_GRAPHITE_RUNTIME_REPO: ${{ github.workspace }}\compose\graphite-runtime-package-probe\build\repo
+          SMOKE_GRAPHITE_RUNTIME_ARTIFACT: org.jetbrains.lets-plot.probe:lets-plot-compose-graphite-runtime-windows-x64-probe:0.153.0-PROBE
+          SMOKE_COMPOSE_VERSION: 1.13.0-alpha01
+          SMOKE_LETS_PLOT_COMPOSE_ARTIFACT: lets-plot-compose-desktop
+          SMOKE_RENDER_API: SOFTWARE
+          SMOKE_DESKTOP_RENDER_PATH: graphite-offscreen
+          SMOKE_GRAPHITE_FAIL_PAINT_ONCE: 'true'
+          SMOKE_TOOLTIP_STABLE_BASELINE: 'true'
+          SMOKE_TOOLTIP_DWELL_MS: '700'
+          SMOKE_TOOLTIP_X_RADIUS: '160'
+          SMOKE_TOOLTIP_Y_RADIUS: '120'
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}\compose\graphite-runtime-package-probe\build\activation\failure-fallback
+        run: .\gradlew.bat -p consumer-smoke clean run --stacktrace
+
       - name: Verify Graphite runtime provider activation contract
         working-directory: compose
         shell: pwsh
@@ -2676,10 +2700,12 @@ jobs:
           $activationDir = "graphite-runtime-package-probe\build\activation"
           $fallbackSummary = Join-Path $activationDir "fallback\smoke-summary.txt"
           $optInSummary = Join-Path $activationDir "opt-in\smoke-summary.txt"
+          $failureSummary = Join-Path $activationDir "failure-fallback\smoke-summary.txt"
           $manifest = Join-Path $activationDir "graphite-runtime-provider-activation.txt"
+          $failureManifest = Join-Path $activationDir "graphite-runtime-failure-fallback.txt"
           $jarEntries = Join-Path $activationDir "runtime-jar-entries.txt"
 
-          foreach ($file in @($fallbackSummary, $optInSummary)) {
+          foreach ($file in @($fallbackSummary, $optInSummary, $failureSummary)) {
             if (!(Test-Path $file)) {
               throw "Runtime activation smoke summary missing: $file"
             }
@@ -2708,6 +2734,23 @@ jobs:
             '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$'
           )) {
             Require-Pattern $optInSummary $pattern
+          }
+
+          foreach ($pattern in @(
+            '^result=PASS$',
+            '^desktop\.renderPath\.requested=graphite-offscreen$',
+            '^graphite\.runtime\.activation=ACTIVE$',
+            '^graphite\.runtime\.backend=PERSISTENT_GRAPHITE_VULKAN$',
+            '^desktop\.offscreen\.failure=java\.lang\.IllegalStateException$',
+            '^desktop\.offscreen\.failureCount=1$',
+            '^graphite\.runtime\.injectedFailure=TRIGGERED$',
+            '^graphite\.runtime\.paintAttempts=1$',
+            '^graphite\.runtime\.contextCreated=YES$',
+            '^graphite\.runtime\.targetCreated=YES$',
+            '^graphite\.runtime\.disposeCount=1$',
+            '^graphite\.runtime\.cleanup=PASS$'
+          )) {
+            Require-Pattern $failureSummary $pattern
           }
 
           $runtimeJar = Get-ChildItem "graphite-runtime-package-probe\build\repo\org\jetbrains\lets-plot\probe\lets-plot-compose-graphite-runtime-windows-x64-probe\0.153.0-PROBE" -Filter "*.jar" | Select-Object -First 1
@@ -2748,9 +2791,34 @@ jobs:
           public.api.change=NONE
           "@ | Set-Content -Path $manifest -Encoding UTF8
 
+          @"
+          schema=1
+          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE_CAPABLE
+          request.path=graphite-offscreen
+          failure.stage=POST_GPU_RESOURCE_INITIALIZATION_PRE_SUBMIT
+          failure.type=java.lang.IllegalStateException
+          failure.count=1
+          provider.paint_attempts=1
+          provider.quarantined=PASS
+          provider.dispose_once=PASS
+          bootstrap.retry=SUPPRESSED
+          same_frame.native_fallback=PASS
+          subsequent_frames.native_fallback=PASS
+          gpu.context_created=YES
+          gpu.target_created=YES
+          gpu.cleanup=PASS
+          consumer.full_interaction_smoke=PASS
+          production.renderer.default=NATIVE_CANVAS
+          production.desktop.graphite_dependency=ABSENT
+          renderer.adoption=SHADOW_OPT_IN_ONLY
+          public.api.change=NONE
+          "@ | Set-Content -Path $failureManifest -Encoding UTF8
+
           Get-Content $fallbackSummary
           Get-Content $optInSummary
+          Get-Content $failureSummary
           Get-Content $manifest
+          Get-Content $failureManifest
 
       - name: Upload Graphite runtime provider activation evidence
         if: always()
@@ -2759,11 +2827,14 @@ jobs:
           name: graphite-runtime-provider-activation-${{ github.sha }}
           path: |
             compose/graphite-runtime-package-probe/build/activation/graphite-runtime-provider-activation.txt
+            compose/graphite-runtime-package-probe/build/activation/graphite-runtime-failure-fallback.txt
             compose/graphite-runtime-package-probe/build/activation/runtime-jar-entries.txt
             compose/graphite-runtime-package-probe/build/activation/fallback/smoke-summary.txt
             compose/graphite-runtime-package-probe/build/activation/fallback/*.png
             compose/graphite-runtime-package-probe/build/activation/opt-in/smoke-summary.txt
             compose/graphite-runtime-package-probe/build/activation/opt-in/*.png
+            compose/graphite-runtime-package-probe/build/activation/failure-fallback/smoke-summary.txt
+            compose/graphite-runtime-package-probe/build/activation/failure-fallback/*.png
           if-no-files-found: warn
           retention-days: 90
 
