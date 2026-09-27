@@ -16,6 +16,7 @@ Current development baseline:
 
 - Shared default plot toolbar on Desktop, Android, and WasmJS.
 - WasmJS hyperlink navigation using the browser window.
+- Android hyperlink navigation through the Compose URI handler, with lifecycle-safe callback cleanup.
 - Dedicated multiplatform UI-parity and interaction-contract CI evidence.
 
 ### Changed
