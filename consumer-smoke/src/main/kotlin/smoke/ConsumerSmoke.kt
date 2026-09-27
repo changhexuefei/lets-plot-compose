@@ -218,6 +218,10 @@ fun main() {
                             "graphite.runtime.activation=" +
                                 (System.getProperty("letsplot.compose.graphite.runtime.activation") ?: "ABSENT")
                         )
+                        appendLine(
+                            "graphite.runtime.backend=" +
+                                (System.getProperty("letsplot.compose.graphite.runtime.backend") ?: "ABSENT")
+                        )
                         appendLine("checks=render,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
                     }
                 )
