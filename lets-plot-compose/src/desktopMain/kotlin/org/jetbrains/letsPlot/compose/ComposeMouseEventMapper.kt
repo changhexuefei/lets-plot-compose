@@ -90,24 +90,18 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                 mouseEventPeer.dispatch(MOUSE_RELEASED, mouseEvent)
             }
 
-            PointerEventType.Move -> {
-                if (change.pressed) {
-                    mouseEventPeer.dispatch(MOUSE_DRAGGED, mouseEvent)
-                } else {
-                    mouseEventPeer.dispatch(MOUSE_MOVED, mouseEvent)
-                }
-            }
+            PointerEventType.Move ->
+                mouseEventPeer.dispatch(PointerInteractionContract.moveEventSpec(change.pressed), mouseEvent)
 
             PointerEventType.Enter -> mouseEventPeer.dispatch(MOUSE_ENTERED, mouseEvent)
             PointerEventType.Exit -> mouseEventPeer.dispatch(MOUSE_LEFT, mouseEvent)
 
             PointerEventType.Scroll -> {
                 val scrollDelta = change.scrollDelta
-                val scrollAmount = if (kotlin.math.abs(scrollDelta.x) > kotlin.math.abs(scrollDelta.y)) {
-                    scrollDelta.x.toDouble()
-                } else {
-                    scrollDelta.y.toDouble()
-                }
+                val scrollAmount = PointerInteractionContract.dominantScrollAmount(
+                    x = scrollDelta.x.toDouble(),
+                    y = scrollDelta.y.toDouble()
+                )
 
                 val wheelMouseEvent = MouseWheelEvent(
                     x = vector.x,
@@ -138,7 +132,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     }
 
     private fun extractModifiers(event: PointerEvent): KeyModifiers {
-        return KeyModifiers(
+        return PointerInteractionContract.keyModifiers(
             isCtrl = event.keyboardModifiers.isCtrlPressed,
             isAlt = event.keyboardModifiers.isAltPressed,
             isShift = event.keyboardModifiers.isShiftPressed,

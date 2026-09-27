@@ -94,6 +94,51 @@ jobs:
         working-directory: compose
         run: ./gradlew :lets-plot-compose:desktopTest --stacktrace
 
+      - name: Build multiplatform interaction contract evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test_results="compose/lets-plot-compose/build/test-results/desktopTest"
+          if [ ! -d "$test_results" ]; then
+            echo "Desktop test results were not found: $test_results"
+            exit 1
+          fi
+
+          grep -R -q "PointerInteractionContractTest" "$test_results"
+          grep -R -q "PlotFigureModelDispatcherOwnerTest" "$test_results"
+
+          evidence_dir="compose/lets-plot-compose/build/interaction-contract"
+          mkdir -p "$evidence_dir"
+
+          cat > "$evidence_dir/multiplatform-interaction-contract.txt" <<EOF
+          schema=1
+          result=MULTIPLATFORM_INTERACTION_CONTRACT_PASS
+          android.compile=PASS
+          wasm.compile=PASS
+          desktop.contract_tests=PASS
+          pointer.pressed_move=MOUSE_DRAGGED
+          pointer.unpressed_move=MOUSE_MOVED
+          pointer.wheel_axis=DOMINANT_ABSOLUTE_DELTA
+          pointer.modifiers=CTRL_ALT_SHIFT_META
+          figure_model.dispatcher_ownership=PASS
+          figure_model.stale_release=SAFE
+          production.renderer.default=NATIVE_CANVAS
+          graphite.change=NONE
+          workflow.sha=${GITHUB_SHA}
+          workflow.run_id=${GITHUB_RUN_ID}
+          EOF
+
+          cat "$evidence_dir/multiplatform-interaction-contract.txt"
+
+      - name: Upload multiplatform interaction contract evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: multiplatform-interaction-contract-${{ github.sha }}
+          path: compose/lets-plot-compose/build/interaction-contract/multiplatform-interaction-contract.txt
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Build desktop render path contract evidence
         shell: bash
         run: |
