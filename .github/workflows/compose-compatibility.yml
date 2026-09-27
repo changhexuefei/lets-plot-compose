@@ -2986,10 +2986,11 @@ jobs:
           plotpanel_performance="$(find_one evidence/plotpanel-performance plotpanel-performance-comparison.txt)"
           runtime_packaging="$(find_one evidence/runtime-packaging graphite-runtime-packaging.txt)"
           runtime_activation="$(find_one evidence/runtime-activation graphite-runtime-provider-activation.txt)"
+          runtime_failure="$(find_one evidence/runtime-activation graphite-runtime-failure-fallback.txt)"
 
           echo "Resolved readiness evidence:"
-          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n  runtime_packaging=%s\n  runtime_activation=%s\n' \
-            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance" "$runtime_packaging" "$runtime_activation"
+          printf '  recompile=%s\n  canvas=%s\n  plot=%s\n  bridge=%s\n  offscreen=%s\n  compose_offscreen=%s\n  render_path=%s\n  graphite_provider=%s\n  plotpanel_shadow=%s\n  plotpanel_performance=%s\n  runtime_packaging=%s\n  runtime_activation=%s\n  runtime_failure=%s\n' \
+            "$recompile" "$canvas" "$plot" "$bridge" "$offscreen" "$compose_offscreen" "$render_path" "$graphite_provider" "$plotpanel_shadow" "$plotpanel_performance" "$runtime_packaging" "$runtime_activation" "$runtime_failure"
 
           require_line() {
             local file="$1"
@@ -3060,6 +3061,9 @@ jobs:
           require_line "$render_path" "offscreen.provider.dispose=REGISTRATION_OWNED"
           require_line "$render_path" "offscreen.runtime_bootstrap=EXPLICIT_OFFSCREEN_REQUEST_ONLY"
           require_line "$render_path" "offscreen.runtime_missing=FALLBACK_NATIVE"
+          require_line "$render_path" "offscreen.provider_failure=QUARANTINE_AND_FALLBACK_NATIVE"
+          require_line "$render_path" "offscreen.provider_failure_dispose=ONCE"
+          require_line "$render_path" "offscreen.provider_failure_retry=SUPPRESSED"
           require_line "$render_path" "public.api.change=NONE"
           require_line "$render_path" "production.graphite_dependency=ABSENT"
           require_line "$render_path" "renderer.adoption=NOT_STARTED"
@@ -3220,13 +3224,33 @@ jobs:
           require_line "$runtime_activation" "renderer.adoption=SHADOW_OPT_IN_ONLY"
           require_line "$runtime_activation" "public.api.change=NONE"
 
+          require_line "$runtime_failure" "result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE_CAPABLE"
+          require_line "$runtime_failure" "request.path=graphite-offscreen"
+          require_line "$runtime_failure" "failure.stage=POST_GPU_RESOURCE_INITIALIZATION_PRE_SUBMIT"
+          require_line "$runtime_failure" "failure.type=java.lang.IllegalStateException"
+          require_line "$runtime_failure" "failure.count=1"
+          require_line "$runtime_failure" "provider.paint_attempts=1"
+          require_line "$runtime_failure" "provider.quarantined=PASS"
+          require_line "$runtime_failure" "provider.dispose_once=PASS"
+          require_line "$runtime_failure" "bootstrap.retry=SUPPRESSED"
+          require_line "$runtime_failure" "same_frame.native_fallback=PASS"
+          require_line "$runtime_failure" "subsequent_frames.native_fallback=PASS"
+          require_line "$runtime_failure" "gpu.context_created=YES"
+          require_line "$runtime_failure" "gpu.target_created=YES"
+          require_line "$runtime_failure" "gpu.cleanup=PASS"
+          require_line "$runtime_failure" "consumer.full_interaction_smoke=PASS"
+          require_line "$runtime_failure" "production.renderer.default=NATIVE_CANVAS"
+          require_line "$runtime_failure" "production.desktop.graphite_dependency=ABSENT"
+          require_line "$runtime_failure" "renderer.adoption=SHADOW_OPT_IN_ONLY"
+          require_line "$runtime_failure" "public.api.change=NONE"
+
       - name: Build Graphite renderer readiness manifest
         shell: bash
         run: |
           mkdir -p evidence/readiness
           cat > evidence/readiness/graphite-renderer-readiness.txt <<EOF
           schema=1
-          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_PROVIDER_ACTIVATION_EVIDENCE_CAPABLE
+          result=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE_CAPABLE
           platform=windows-probe-chain
           jdk=21
           compose.preview=1.13.0-alpha01
@@ -3271,6 +3295,17 @@ jobs:
           graphite.runtime_opt_in_activation=ACTIVE
           graphite.runtime_opt_in_backend=PERSISTENT_GRAPHITE_VULKAN
           graphite.runtime_full_interaction_smoke=PASS
+          graphite.runtime_failure_fallback=PASS
+          graphite.runtime_failure_stage=POST_GPU_RESOURCE_INITIALIZATION_PRE_SUBMIT
+          graphite.runtime_failure_count=1
+          graphite.runtime_failure_paint_attempts=1
+          graphite.runtime_failure_quarantine=PASS
+          graphite.runtime_failure_dispose_once=PASS
+          graphite.runtime_failure_retry=SUPPRESSED
+          graphite.runtime_failure_same_frame_native=PASS
+          graphite.runtime_failure_subsequent_native=PASS
+          graphite.runtime_failure_gpu_cleanup=PASS
+          graphite.runtime_failure_full_interaction_smoke=PASS
           plotpanel.resize=PASS
           plotpanel.recomposition=PASS
           plotpanel.figure_model_dispose=PASS
@@ -3305,7 +3340,7 @@ jobs:
           graphite.backend.packaging=PROBE_ONLY
           production.renderer.switch=NOT_IMPLEMENTED
           renderer.adoption=SHADOW_OPT_IN_ONLY
-          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_FAILURE_FALLBACK_EVIDENCE
+          next.required=COMPOSE_PLOTPANEL_GRAPHITE_RUNTIME_COMPATIBILITY_GATE_EVIDENCE
           workflow.sha=${{ github.sha }}
           workflow.run_id=${{ github.run_id }}
           EOF
