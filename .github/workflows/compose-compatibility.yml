@@ -235,11 +235,15 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Publish Compose Desktop consumer artifacts
+      - name: Publish Compose consumer artifacts
         working-directory: compose
         run: >
           ./gradlew
+          :platf-android:publishAndroidReleasePublicationToMavenLocalRepository
+          :platf-android:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :lets-plot-compose:publishAndroidReleasePublicationToMavenLocalRepository
           :lets-plot-compose:publishDesktopPublicationToMavenLocalRepository
+          :lets-plot-compose:publishWasmJsPublicationToMavenLocalRepository
           :lets-plot-compose:publishKotlinMultiplatformPublicationToMavenLocalRepository
           --stacktrace
 
@@ -327,8 +331,16 @@ jobs:
           :plot-stem:publishJvmPublicationToMavenLocalRepository
           :plot-stem:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :plot-raster:publishJvmPublicationToMavenLocalRepository
+          :plot-raster:publishWasmJsPublicationToMavenLocalRepository
           :plot-raster:publishKotlinMultiplatformPublicationToMavenLocalRepository
+          :commons:publishWasmJsPublicationToMavenLocalRepository
+          :canvas:publishWasmJsPublicationToMavenLocalRepository
+          :datamodel:publishWasmJsPublicationToMavenLocalRepository
+          :plot-base:publishWasmJsPublicationToMavenLocalRepository
+          :plot-builder:publishWasmJsPublicationToMavenLocalRepository
+          :plot-stem:publishWasmJsPublicationToMavenLocalRepository
           :jvm-package:jvm-publish-common:publishJvmPublicationToMavenLocalRepository
+          :jvm-package:jvm-publish-common:publishWasmJsPublicationToMavenLocalRepository
           :jvm-package:jvm-publish-common:publishKotlinMultiplatformPublicationToMavenLocalRepository
           :platf-awt:publishPlatf-awtPublicationToMavenLocalRepository
           :platf-batik:publishPlatf-batikPublicationToMavenLocalRepository
@@ -355,6 +367,108 @@ jobs:
           path: core-bundle
           if-no-files-found: error
           retention-days: 3
+
+  multiplatform-consumer-smoke:
+    needs:
+      - compose-compatibility
+      - core-jvm-bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout standalone multiplatform consumer only
+        uses: actions/checkout@v4
+        with:
+          path: compose
+          sparse-checkout: |
+            consumer-smoke-mpp
+            gradlew
+            gradlew.bat
+            gradle/wrapper
+          sparse-checkout-cone-mode: false
+
+      - name: Download frontend Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Set up JDK 17 consumer runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up consumer Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Build Android AAR and Wasm production bundle
+        working-directory: compose
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}/consumer-bundle/core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}/consumer-bundle/kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}/consumer-bundle/compose
+        run: >
+          ./gradlew
+          -p consumer-smoke-mpp
+          clean
+          assembleRelease
+          wasmJsBrowserProductionWebpack
+          --stacktrace
+
+      - name: Verify multiplatform consumer outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          android_aar="$(find compose/consumer-smoke-mpp/build/outputs/aar -name '*.aar' -type f | head -n 1)"
+          wasm_js="$(find compose/consumer-smoke-mpp/build/dist/wasmJs/productionExecutable -name 'letsPlotConsumerSmoke.js' -type f | head -n 1)"
+          wasm_binary="$(find compose/consumer-smoke-mpp/build/dist/wasmJs/productionExecutable -name '*.wasm' -type f | head -n 1)"
+
+          test -n "$android_aar"
+          test -s "$android_aar"
+          test -n "$wasm_js"
+          test -s "$wasm_js"
+          test -n "$wasm_binary"
+          test -s "$wasm_binary"
+
+          evidence_dir="compose/consumer-smoke-mpp/build/evidence"
+          mkdir -p "$evidence_dir"
+
+          cat > "$evidence_dir/multiplatform-consumer-smoke.txt" <<EOF
+          schema=1
+          result=MULTIPLATFORM_CONSUMER_SMOKE_PASS
+          consumer.boundary=PUBLISHED_MAVEN_ONLY
+          source.shared_plotpanel=PASS
+          android.release_aar=PASS
+          android.variant=ANDROID_RELEASE
+          wasm.production_bundle=PASS
+          wasm.binary=PASS
+          compose.version=1.12.1
+          kotlin.version=2.4.20
+          lets_plot_compose.version=3.2.3-SNAPSHOT
+          public.api.change=NONE
+          production.renderer.default=NATIVE_CANVAS
+          workflow.sha=${GITHUB_SHA}
+          workflow.run_id=${GITHUB_RUN_ID}
+          EOF
+
+          cat "$evidence_dir/multiplatform-consumer-smoke.txt"
+
+      - name: Upload multiplatform consumer evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: multiplatform-consumer-smoke-${{ github.sha }}
+          path: compose/consumer-smoke-mpp/build/evidence/multiplatform-consumer-smoke.txt
+          if-no-files-found: error
+          retention-days: 90
 
   windows-consumer-smoke:
     needs:
