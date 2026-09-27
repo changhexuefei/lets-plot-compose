@@ -17,11 +17,36 @@ application targeting Desktop, Android, and WasmJS.
 
 For more details see [Compose multiplatform compatibility and versioning overview](https://www.jetbrains.com/help/kotlin-multiplatform-dev/compose-compatibility-and-versioning.html).
 
+### Current Development Baseline
+
+The current `main` branch is the **3.2.3-SNAPSHOT** development line and is validated with:
+
+- Kotlin **2.4.20**
+- Compose Multiplatform **1.12.1**
+- Lets-Plot Kotlin API **4.15.1-SNAPSHOT**
+- Lets-Plot Multiplatform **4.11.1-SNAPSHOT**
+- Android compile SDK **35**, minimum SDK **24**
+
+The latest published dependency examples below intentionally remain on the latest released artifact line until 3.2.3 is released.
+
+The current cross-platform regression baseline also verifies the following behavior on Desktop, Android, and WasmJS:
+
+| Capability | Desktop | Android | WasmJS |
+| --- | --- | --- | --- |
+| Compose Canvas plot rendering | Yes | Yes | Yes |
+| Default Pan / Rubber Band Zoom / Centerpoint Zoom / Reset toolbar | Yes | Yes | Yes |
+| Shared pointer drag / move / wheel interaction contract | Yes | Yes | Yes |
+| Ctrl / Alt / Shift / Meta interaction modifiers | Yes | Yes | Yes |
+| Computation-message redispatch after plot-spec replacement | Yes | Yes | Yes |
+| Hyperlink navigation | Yes | Not yet part of the parity baseline | Yes |
+
+The toolbar implementation and interaction contract are shared from common code where practical, while platform adapters retain only the platform-specific event and navigation integration. The compatibility CI compiles all three targets and emits dedicated regression evidence for these contracts.
+
 ### Desktop Graphite Readiness
 
 The production Desktop renderer remains **Native Canvas**.
 
-This fork also carries an **experimental, explicit opt-in Graphite readiness baseline** used by CI to validate the future Compose Desktop/Skiko Graphite path. The frozen verified matrix is:
+This fork also carries an **experimental, explicit opt-in Graphite readiness baseline** used by CI to validate the future Compose Desktop/Skiko Graphite path. This probe baseline is intentionally separate from the production Compose 1.12.1 build. The frozen verified probe matrix is:
 
 - Windows x64
 - JDK 21
