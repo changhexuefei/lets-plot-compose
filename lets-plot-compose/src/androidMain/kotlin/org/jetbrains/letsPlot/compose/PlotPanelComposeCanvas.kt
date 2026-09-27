@@ -104,6 +104,9 @@ fun PlotPanelComposeCanvas(
             plotDrawable.mapToCanvas(androidCanvasPeer)
         )
     }
+    val dispatcherOwner = remember(plotDrawable, figureModel) {
+        PlotFigureModelDispatcherOwner(figureModel)
+    }
 
     // Background
     val finalModifier = if (errorMessage != null) {
@@ -121,13 +124,16 @@ fun PlotPanelComposeCanvas(
     }
 
 
-    DisposableEffect(plotComponentRegistrations) {
+    DisposableEffect(plotComponentRegistrations, dispatcherOwner) {
         onDispose {
+            // Release only the dispatcher owned by this composition. A newer composition may
+            // already have rebound the same FigureModel to a replacement PlotCanvasDrawable.
+            dispatcherOwner.release()
+
             // Try/catch to ensure that any exception in dispose() does not break the Composable lifecycle
             // Otherwise, the app window gets unclosable.
             try {
                 plotComponentRegistrations.dispose()
-                //plotCanvasFigure2.dispose()
             } catch (e: Exception) {
                 LOG.error(e) { "plotComponentRegistrations.dispose() failed: ${e.message}" }
             }
@@ -179,11 +185,9 @@ fun PlotPanelComposeCanvas(
                                 }
                             }
 
-                            // Connect the figure model to the plot component
-                            figureModel.toolEventDispatcher = plotDrawable.toolEventDispatcher
-                            plotComponentRegistrations.add(Registration.onRemove {
-                                figureModel.toolEventDispatcher = null
-                            })
+                            // Connect the figure model to the plot component without accumulating
+                            // stale cleanup registrations across resize/spec updates.
+                            dispatcherOwner.bind(plotDrawable.toolEventDispatcher)
 
                             val plotWidth = plotDrawable.size.x
                             val plotHeight = plotDrawable.size.y
@@ -301,8 +305,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                     PointerEventType.Move -> {
                         if (change.pressed) {
                             dragging = true
-                            mouseEventPeer.dispatch(MOUSE_MOVED, mouseEvent)
-                            //mouseEventPeer.dispatch(MOUSE_DRAGGED, mouseEvent)
+                            mouseEventPeer.dispatch(MOUSE_DRAGGED, mouseEvent)
                         } else {
                             mouseEventPeer.dispatch(MOUSE_MOVED, mouseEvent)
                         }
