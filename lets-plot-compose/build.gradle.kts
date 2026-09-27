@@ -39,6 +39,10 @@ val graphiteCompatibilityGeneratedDir =
     layout.buildDirectory.dir("generated/graphiteCompatibility/desktopMain/kotlin")
 
 val generateDesktopGraphiteCompatibilityMarker by tasks.registering {
+    inputs.property("graphiteCompatibilityEnabled", graphiteCompatibilityEnabled)
+    inputs.property("graphiteCompatibilitySkikoVersion", graphiteCompatibilitySkikoVersion)
+    inputs.property("graphiteCompatibilityProfile", graphiteCompatibilityProfile)
+    inputs.property("composeVersionForCompatibility", composeVersionForCompatibility)
     outputs.dir(graphiteCompatibilityGeneratedDir)
 
     doLast {
