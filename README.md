@@ -55,6 +55,8 @@ The final `release-candidate-readiness` CI gate aggregates these checks into a 9
 
 `release-dependency-preflight` then evaluates whether the release line is actually publishable. While the project or either upstream Lets-Plot dependency is still a SNAPSHOT, CI records a pre-release blocker and prevents a final `3.2.3` version from depending on SNAPSHOT artifacts. See the [3.2.3 release checklist](docs/release/3.2.3-release-checklist.md) for the staged release flow.
 
+A separate signed release-bundle rehearsal exercises the final-version Maven publication path with an ephemeral CI-only signing key and already released compatible upstream artifacts. It validates the local bundle and signatures but never invokes the Central upload task.
+
 ### Desktop Graphite Readiness
 
 The production Desktop renderer remains **Native Canvas**.
