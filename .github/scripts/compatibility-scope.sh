@@ -17,7 +17,7 @@ if [[ -s "$changed_file" ]]; then
     [[ -n "$path" ]] || continue
 
     case "$path" in
-      .github/scripts/upstream-release-readiness.sh|.github/scripts/test-upstream-release-readiness.sh|.github/workflows/upstream-release-readiness.yml|docs/release/3.2.3-release-checklist.md|CHANGELOG.md)
+      .github/scripts/upstream-release-readiness.sh|.github/scripts/test-upstream-release-readiness.sh|.github/workflows/upstream-release-readiness.yml|.github/scripts/graphite-upstream-baseline-readiness.sh|.github/scripts/test-graphite-upstream-baseline-readiness.sh|.github/workflows/graphite-upstream-baseline-readiness.yml|docs/release/3.2.3-release-checklist.md|CHANGELOG.md)
         ;;
       *)
         run_full=true
