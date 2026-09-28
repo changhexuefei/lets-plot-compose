@@ -3881,7 +3881,7 @@ jobs:
 
           property_value() {
             local key="$1"
-            sed -n "s/^\${key}=//p" gradle.properties | tail -n 1
+            sed -n "s/^${key}=//p" gradle.properties | tail -n 1
           }
 
           project_version="$(property_value 'letsPlotCompose.version')"
@@ -3938,7 +3938,7 @@ jobs:
 
           blocker_csv="NONE"
           if ((${#blockers[@]})); then
-            blocker_csv="$(IFS=,; echo "\${blockers[*]}")"
+            blocker_csv="$(IFS=,; echo "${blockers[*]}")"
           fi
 
           mkdir -p build/release-preflight
