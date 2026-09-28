@@ -441,16 +441,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          android_aar="$(find compose/consumer-smoke-mpp/build/outputs/aar -name '*.aar' -type f | head -n 1)"
-          wasm_js="$(find compose/consumer-smoke-mpp/build/dist/wasmJs/productionExecutable -name 'letsPlotConsumerSmoke.js' -type f | head -n 1)"
-          wasm_binary="$(find compose/consumer-smoke-mpp/build/dist/wasmJs/productionExecutable -name '*.wasm' -type f | head -n 1)"
+          android_aar="$(find compose/consumer-smoke-mpp/build/outputs/aar -name '*.aar' -type f -print -quit)"
+          wasm_js="$(find compose/consumer-smoke-mpp/build -name 'letsPlotConsumerSmoke.js' -type f -print -quit)"
 
           test -n "$android_aar"
           test -s "$android_aar"
           test -n "$wasm_js"
           test -s "$wasm_js"
+
+          wasm_output_dir="$(dirname "$wasm_js")"
+          wasm_binary="$(find "$wasm_output_dir" -maxdepth 1 -name '*.wasm' -type f -print -quit)"
+
           test -n "$wasm_binary"
           test -s "$wasm_binary"
+
+          echo "Android AAR: $android_aar"
+          echo "Wasm JS: $wasm_js"
+          echo "Wasm binary: $wasm_binary"
 
           evidence_dir="compose/consumer-smoke-mpp/build/evidence"
           mkdir -p "$evidence_dir"
