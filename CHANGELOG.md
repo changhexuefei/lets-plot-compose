@@ -23,6 +23,7 @@ Current development baseline:
 - Release dependency preflight that blocks a final 3.2.3 version from depending on SNAPSHOT Lets-Plot artifacts, verifies non-SNAPSHOT upstream artifacts against Maven Central, and records the current pre-release state.
 - Signed 3.2.3 release-bundle rehearsal using an ephemeral CI key and the known released 4.11.0/4.15.0 upstream pair, without external publication.
 - Full release-bundle integrity coverage requiring every Maven payload and its detached GPG signature to have verified SHA-256/SHA-512 checksum evidence, plus a retained hash inventory.
+- Lightweight 3.2.3 upstream-release readiness workflow that checks the target Lets-Plot 4.11.1 and Kotlin API 4.15.1 artifacts on Maven Central without running the full compatibility matrix.
 
 ### Changed
 
