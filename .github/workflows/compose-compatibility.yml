@@ -409,7 +409,7 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Build Android AAR and Wasm production bundle
+      - name: Build Android published consumer
         working-directory: compose
         env:
           LETS_PLOT_CORE_REPO: ${{ github.workspace }}/consumer-bundle/core
@@ -420,7 +420,20 @@ jobs:
           -p consumer-smoke-mpp
           clean
           assembleRelease
+          --no-daemon
+          --stacktrace
+
+      - name: Build Wasm published consumer
+        working-directory: compose
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}/consumer-bundle/core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}/consumer-bundle/kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}/consumer-bundle/compose
+        run: >
+          ./gradlew
+          -p consumer-smoke-mpp
           wasmJsBrowserProductionWebpack
+          --no-daemon
           --stacktrace
 
       - name: Verify multiplatform consumer outputs
