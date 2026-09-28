@@ -1,0 +1,69 @@
+name: 3.2.3 upstream release readiness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - gradle.properties
+      - .github/scripts/upstream-release-readiness.sh
+      - .github/workflows/upstream-release-readiness.yml
+  push:
+    branches: [ main ]
+    paths:
+      - gradle.properties
+      - .github/scripts/upstream-release-readiness.sh
+      - .github/workflows/upstream-release-readiness.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-release-readiness-3.2.3
+  cancel-in-progress: true
+
+jobs:
+  upstream-release-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout release metadata only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            gradle.properties
+            .github/scripts/upstream-release-readiness.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Validate upstream readiness script
+        shell: bash
+        run: bash -n .github/scripts/upstream-release-readiness.sh
+
+      - name: Check target upstream releases
+        shell: bash
+        run: bash .github/scripts/upstream-release-readiness.sh
+
+      - name: Publish readiness summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f build/release-readiness/3.2.3-upstream-release-readiness.txt ]]; then
+            {
+              echo '## Lets-Plot Compose 3.2.3 upstream release readiness'
+              echo
+              echo '~~~text'
+              cat build/release-readiness/3.2.3-upstream-release-readiness.txt
+              echo '~~~'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload upstream release readiness evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-release-readiness-3.2.3-${{ github.run_id }}
+          path: build/release-readiness/3.2.3-upstream-release-readiness.txt
+          if-no-files-found: error
+          retention-days: 90
