@@ -4031,7 +4031,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-bundle-rehearsal-3.2.3-${{ github.sha }}
-          path: build/release-rehearsal/3.2.3-release-bundle-rehearsal.txt
+          path: |
+            build/release-rehearsal/3.2.3-release-bundle-rehearsal.txt
+            build/release-rehearsal/3.2.3-release-bundle-inventory.txt
           if-no-files-found: error
           retention-days: 90
 
