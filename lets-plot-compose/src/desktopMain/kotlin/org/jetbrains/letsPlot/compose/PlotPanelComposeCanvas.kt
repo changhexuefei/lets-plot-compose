@@ -28,7 +28,6 @@ import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.letsPlot.compose.canvas.SkiaCanvasPeer
 import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
 import org.jetbrains.letsPlot.core.interact.event.ToolEventDispatcher
-import org.jetbrains.letsPlot.core.plot.builder.interact.tools.DefaultFigureToolsController
 import org.jetbrains.letsPlot.core.spec.Option.Meta.Kind.GG_TOOLBAR
 import org.jetbrains.letsPlot.core.spec.config.PlotConfig
 import org.jetbrains.letsPlot.core.spec.front.SpecOverrideUtil.applySpecOverride
@@ -84,24 +83,14 @@ fun PlotPanelComposeCanvas(
     var errorMessage: String? by remember(processedPlotSpec, panelSize) { mutableStateOf(null) }
 
     val hasToolbar = GG_TOOLBAR in processedPlotSpec
-    val defaultInteractionController = remember(figureModel) {
-        DefaultFigureToolsController(
-            figure = figureModel,
+    val defaultInteractionFeedbackOwner = remember(figureModel, hasToolbar) {
+        DefaultInteractionFeedbackOwner(
+            figureModel = figureModel,
+            hasToolbar = hasToolbar,
             errorMessageHandler = { message ->
                 LOG.info { "Figure interaction error: $message" }
             }
         )
-    }
-    val defaultInteractionRegistration = remember(figureModel, hasToolbar, defaultInteractionController) {
-        if (hasToolbar) {
-            // PlotToolbar owns the FigureToolsController callback when it is present.
-            Registration.EMPTY
-        } else {
-            // Default wheel/pan interactions must update the FigureModel even when no toolbar is rendered.
-            figureModel.addToolEventCallback { event ->
-                defaultInteractionController.handleToolFeedback(event)
-            }
-        }
     }
 
     var redrawTrigger by remember { mutableStateOf(0) }
@@ -150,7 +139,7 @@ fun PlotPanelComposeCanvas(
         figureModel,
         repaintRegistration,
         canvasRegistration,
-        defaultInteractionRegistration
+        defaultInteractionFeedbackOwner
     ) {
         plotDrawable.onHrefClick(::browseLink)
 
@@ -170,12 +159,16 @@ fun PlotPanelComposeCanvas(
             // the remaining cleanup from running.
             disposeRegistrationSafely("canvas", canvasRegistration)
             disposeRegistrationSafely("repaint", repaintRegistration)
-            disposeRegistrationSafely("figure-tools", defaultInteractionRegistration)
+            try {
+                defaultInteractionFeedbackOwner.dispose()
+            } catch (e: Exception) {
+                LOG.error(e) { "default interaction feedback dispose failed: ${e.message}" }
+            }
         }
     }
 
     Column(modifier = finalModifier) {
-        if (GG_TOOLBAR in processedPlotSpec) {
+        if (hasToolbar) {
             PlotToolbar(figureModel)
         }
 
