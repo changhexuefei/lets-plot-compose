@@ -31,6 +31,8 @@ grep -Fx 'readiness.state=FROZEN_WAITING_FOR_STABLE_BASELINE' "$waiting_output"
 grep -Fx 'readiness.next_required=NONE' "$waiting_output"
 grep -Fx 'latest.stable.compose.threshold=BELOW_THRESHOLD' "$waiting_output"
 grep -Fx 'latest.stable.skiko.threshold=BELOW_THRESHOLD' "$waiting_output"
+grep -Fx 'baseline.production.renderer=NATIVE_CANVAS' "$waiting_output"
+grep -Fx 'baseline.production.switch=NOT_REQUESTED' "$waiting_output"
 grep -Fx 'production.change=NONE' "$waiting_output"
 
 candidate_output="$tmp_root/candidate.txt"
@@ -40,6 +42,8 @@ grep -Fx 'readiness.state=REVIEW_UPSTREAM_BASELINE' "$candidate_output"
 grep -Fx 'readiness.next_required=RUN_NEW_GRAPHITE_COMPATIBILITY_PROBE' "$candidate_output"
 grep -Fx 'latest.stable.compose.threshold=THRESHOLD_MET' "$candidate_output"
 grep -Fx 'latest.stable.skiko.threshold=THRESHOLD_MET' "$candidate_output"
+grep -Fx 'baseline.production.renderer=NATIVE_CANVAS' "$candidate_output"
+grep -Fx 'baseline.production.switch=NOT_REQUESTED' "$candidate_output"
 grep -Fx 'production.change=NONE' "$candidate_output"
 
 mixed_output="$tmp_root/mixed.txt"
@@ -48,5 +52,8 @@ GRAPHITE_UPSTREAM_COMPOSE_JSON="$compose_new" GRAPHITE_UPSTREAM_SKIKO_JSON="$ski
 grep -Fx 'readiness.state=FROZEN_WAITING_FOR_STABLE_BASELINE' "$mixed_output"
 grep -Fx 'latest.stable.compose.threshold=THRESHOLD_MET' "$mixed_output"
 grep -Fx 'latest.stable.skiko.threshold=BELOW_THRESHOLD' "$mixed_output"
+grep -Fx 'baseline.production.renderer=NATIVE_CANVAS' "$mixed_output"
+grep -Fx 'baseline.production.switch=NOT_REQUESTED' "$mixed_output"
+grep -Fx 'production.change=NONE' "$mixed_output"
 
 echo 'GRAPHITE_UPSTREAM_BASELINE_CONTRACT_TEST_PASS'
