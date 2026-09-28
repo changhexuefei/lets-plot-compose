@@ -15,7 +15,85 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  compatibility-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_full: ${{ steps.scope.outputs.run_full }}
+      reason: ${{ steps.scope.outputs.reason }}
+
+    steps:
+      - name: Checkout scope inputs
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether full compatibility CI is required
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          run_full=true
+          reason="non-diff-trigger"
+
+          changed_file="${RUNNER_TEMP}/compatibility-changed-files.txt"
+          : > "$changed_file"
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA" > "$changed_file"
+            reason="pull-request-diff"
+          elif [[ "$EVENT_NAME" == "push" && -n "${PUSH_BEFORE_SHA:-}" && "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            git diff --name-only "$PUSH_BEFORE_SHA" "$PUSH_HEAD_SHA" > "$changed_file"
+            reason="push-diff"
+          fi
+
+          if [[ -s "$changed_file" ]]; then
+            run_full=false
+            while IFS= read -r path; do
+              case "$path" in
+                .github/scripts/upstream-release-readiness.sh|                .github/scripts/test-upstream-release-readiness.sh|                .github/workflows/upstream-release-readiness.yml|                docs/release/3.2.3-release-checklist.md|                CHANGELOG.md)
+                  ;;
+                *)
+                  run_full=true
+                  reason="full-ci-relevant-change:$path"
+                  break
+                  ;;
+              esac
+            done < "$changed_file"
+
+            if [[ "$run_full" == "false" ]]; then
+              reason="readiness-only-change"
+            fi
+          fi
+
+          echo "Changed files:"
+          cat "$changed_file" || true
+          echo "run_full=$run_full"
+          echo "reason=$reason"
+
+          echo "run_full=$run_full" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+
+      - name: Publish compatibility scope summary
+        shell: bash
+        run: |
+          {
+            echo '## Compatibility CI scope'
+            echo
+            echo "- full matrix required: `${{ steps.scope.outputs.run_full }}`"
+            echo "- reason: `${{ steps.scope.outputs.reason }}`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   compose-compatibility:
+    needs: compatibility-scope
+    if: needs.compatibility-scope.outputs.run_full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -277,6 +355,8 @@ jobs:
           retention-days: 3
 
   core-jvm-bundle:
+    needs: compatibility-scope
+    if: needs.compatibility-scope.outputs.run_full == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     env:
