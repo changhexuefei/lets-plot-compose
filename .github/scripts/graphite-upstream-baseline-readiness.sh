@@ -61,12 +61,12 @@ compose_json="$(fetch_release_json "$compose_api" "$compose_json_file")"
 skiko_json="$(fetch_release_json "$skiko_api" "$skiko_json_file")"
 
 compose_tag="$(jq -r '.tag_name // empty' <<< "$compose_json")"
-compose_prerelease="$(jq -r '.prerelease // empty' <<< "$compose_json")"
+compose_prerelease="$(jq -r 'if has("prerelease") then (.prerelease | tostring) else empty end' <<< "$compose_json")"
 compose_published="$(jq -r '.published_at // empty' <<< "$compose_json")"
 compose_url="$(jq -r '.html_url // empty' <<< "$compose_json")"
 
 skiko_tag="$(jq -r '.tag_name // empty' <<< "$skiko_json")"
-skiko_prerelease="$(jq -r '.prerelease // empty' <<< "$skiko_json")"
+skiko_prerelease="$(jq -r 'if has("prerelease") then (.prerelease | tostring) else empty end' <<< "$skiko_json")"
 skiko_published="$(jq -r '.published_at // empty' <<< "$skiko_json")"
 skiko_url="$(jq -r '.html_url // empty' <<< "$skiko_json")"
 
