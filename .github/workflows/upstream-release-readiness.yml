@@ -9,12 +9,14 @@ on:
     paths:
       - gradle.properties
       - .github/scripts/upstream-release-readiness.sh
+      - .github/scripts/test-upstream-release-readiness.sh
       - .github/workflows/upstream-release-readiness.yml
   push:
     branches: [ main ]
     paths:
       - gradle.properties
       - .github/scripts/upstream-release-readiness.sh
+      - .github/scripts/test-upstream-release-readiness.sh
       - .github/workflows/upstream-release-readiness.yml
 
 permissions:
@@ -36,11 +38,20 @@ jobs:
           sparse-checkout: |
             gradle.properties
             .github/scripts/upstream-release-readiness.sh
+            .github/scripts/test-upstream-release-readiness.sh
           sparse-checkout-cone-mode: false
 
       - name: Validate upstream readiness script
         shell: bash
         run: bash -n .github/scripts/upstream-release-readiness.sh
+
+      - name: Validate upstream readiness contract test
+        shell: bash
+        run: bash -n .github/scripts/test-upstream-release-readiness.sh
+
+      - name: Exercise available and waiting states
+        shell: bash
+        run: bash .github/scripts/test-upstream-release-readiness.sh
 
       - name: Check target upstream releases
         shell: bash
