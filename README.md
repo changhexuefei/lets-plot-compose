@@ -53,6 +53,8 @@ The 3.2.3 stabilization line now validates the **published Maven boundary**, not
 
 The final `release-candidate-readiness` CI gate aggregates these checks into a 90-day evidence artifact. See [3.2.3 RC readiness](docs/release/3.2.3-rc-readiness.md) for the full contract.
 
+`release-dependency-preflight` then evaluates whether the release line is actually publishable. While the project or either upstream Lets-Plot dependency is still a SNAPSHOT, CI records a pre-release blocker and prevents a final `3.2.3` version from depending on SNAPSHOT artifacts. See the [3.2.3 release checklist](docs/release/3.2.3-release-checklist.md) for the staged release flow.
+
 ### Desktop Graphite Readiness
 
 The production Desktop renderer remains **Native Canvas**.
