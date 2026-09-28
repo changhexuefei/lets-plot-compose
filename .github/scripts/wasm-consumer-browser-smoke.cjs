@@ -37,6 +37,30 @@ function sampledUniqueColors(buffer) {
   return colors.size;
 }
 
+function findRedMarker(buffer) {
+  const png = parsePng(buffer);
+  const centerX = png.width / 2;
+  const centerY = png.height / 2;
+  let best = null;
+
+  for (let y = 0; y < png.height; y += 2) {
+    for (let x = 0; x < png.width; x += 2) {
+      const i = (png.width * y + x) << 2;
+      const r = png.data[i];
+      const g = png.data[i + 1];
+      const b = png.data[i + 2];
+      const a = png.data[i + 3];
+      if (a > 180 && r > 170 && g < 120 && b < 120 && r - Math.max(g, b) > 80) {
+        const distance = Math.abs(x - centerX) + Math.abs(y - centerY);
+        if (!best || distance < best.distance) {
+          best = { x, y, distance };
+        }
+      }
+    }
+  }
+  return best;
+}
+
 function pixelDifferenceRatio(leftBuffer, rightBuffer) {
   const a = parsePng(leftBuffer);
   const b = parsePng(rightBuffer);
@@ -153,31 +177,44 @@ async function waitForServer(page) {
     let tooltip = null;
     let tooltipRatio = 0;
     let tooltipPoint = null;
-    const xFractions = [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85];
-    const yFractions = [0.18, 0.30, 0.42, 0.54, 0.66, 0.78, 0.88];
 
-    for (const yf of yFractions) {
-      for (const xf of xFractions) {
-        await page.mouse.move(
-          canvas.box.x + canvas.box.width * xf,
-          canvas.box.y + canvas.box.height * yf
-        );
-        await page.waitForTimeout(120);
-        const candidate = await page.screenshot({ type: 'png', clip });
-        const ratio = pixelDifferenceRatio(tooltipBaseline, candidate);
-        if (ratio > tooltipRatio) {
-          tooltipRatio = ratio;
-          tooltip = candidate;
-          tooltipPoint = [xf, yf];
+    const marker = findRedMarker(tooltipBaseline);
+    if (marker) {
+      await page.mouse.move(clip.x + marker.x, clip.y + marker.y);
+      await page.waitForTimeout(220);
+      const candidate = await page.screenshot({ type: 'png', clip });
+      tooltipRatio = pixelDifferenceRatio(tooltipBaseline, candidate);
+      tooltip = candidate;
+      tooltipPoint = ['marker', marker.x, marker.y];
+    }
+
+    if (tooltipRatio <= diffThreshold) {
+      const xFractions = [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85];
+      const yFractions = [0.18, 0.30, 0.42, 0.54, 0.66, 0.78, 0.88];
+
+      for (const yf of yFractions) {
+        for (const xf of xFractions) {
+          await page.mouse.move(
+            canvas.box.x + canvas.box.width * xf,
+            canvas.box.y + canvas.box.height * yf
+          );
+          await page.waitForTimeout(120);
+          const candidate = await page.screenshot({ type: 'png', clip });
+          const ratio = pixelDifferenceRatio(tooltipBaseline, candidate);
+          if (ratio > tooltipRatio) {
+            tooltipRatio = ratio;
+            tooltip = candidate;
+            tooltipPoint = ['grid', xf, yf];
+          }
+          if (ratio > diffThreshold) break;
         }
-        if (ratio > diffThreshold) break;
+        if (tooltipRatio > diffThreshold) break;
       }
-      if (tooltipRatio > diffThreshold) break;
     }
 
     if (!tooltip || tooltipRatio <= diffThreshold) {
       fail(
-        'Hover sweep did not produce a visible tooltip/repaint change. bestRatio=' +
+        'Hover did not produce a visible tooltip/repaint change. bestRatio=' +
           tooltipRatio + ' threshold=' + diffThreshold
       );
     }
