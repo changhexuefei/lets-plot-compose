@@ -20,6 +20,7 @@ Current development baseline:
 - Dedicated multiplatform UI-parity and interaction-contract CI evidence.
 - Published-Maven standalone consumer smoke for Android and WasmJS, including Android release AAR and Wasm production bundle verification.
 - 3.2.3 release-candidate readiness gate covering Desktop/Android/Wasm consumer evidence and publication inventory.
+- Release dependency preflight that blocks a final 3.2.3 version from depending on SNAPSHOT Lets-Plot artifacts and records the current pre-release state.
 
 ### Changed
 
@@ -27,6 +28,7 @@ Current development baseline:
 - FigureModel dispatcher ownership and toolbar lifecycle are now keyed to the active figure model to prevent stale cleanup from detaching newer bindings.
 - Computation messages are dispatched once per active raw plot spec and are re-enabled when the plot spec changes.
 - CI publication bundles now include the Compose Android and WasmJS target artifacts required by root multiplatform module metadata.
+- The Lets-Plot Compose project version now has a single source of truth in `gradle.properties` via `letsPlotCompose.version`.
 
 ### Fixed
 
