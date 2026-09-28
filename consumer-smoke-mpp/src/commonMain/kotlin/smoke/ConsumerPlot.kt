@@ -20,7 +20,7 @@ fun ConsumerPlot() {
         "y" to listOf(1, 4, 9)
     )
     val figure = remember(data) {
-        letsPlot(data) + geomPoint(size = 14.0) {
+        letsPlot(data) + geomPoint(size = 18.0, color = "#D62728") {
             x = "x"
             y = "y"
         }
