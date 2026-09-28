@@ -1,0 +1,77 @@
+name: Graphite upstream baseline readiness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 2 * * *'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - .github/scripts/graphite-upstream-baseline-readiness.sh
+      - .github/scripts/test-graphite-upstream-baseline-readiness.sh
+      - .github/workflows/graphite-upstream-baseline-readiness.yml
+  push:
+    branches: [ main ]
+    paths:
+      - .github/scripts/graphite-upstream-baseline-readiness.sh
+      - .github/scripts/test-graphite-upstream-baseline-readiness.sh
+      - .github/workflows/graphite-upstream-baseline-readiness.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphite-upstream-baseline-readiness
+  cancel-in-progress: true
+
+jobs:
+  graphite-upstream-baseline-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Graphite readiness scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts/graphite-upstream-baseline-readiness.sh
+            .github/scripts/test-graphite-upstream-baseline-readiness.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Validate Graphite upstream readiness scripts
+        shell: bash
+        run: |
+          bash -n .github/scripts/graphite-upstream-baseline-readiness.sh
+          bash -n .github/scripts/test-graphite-upstream-baseline-readiness.sh
+
+      - name: Exercise Graphite upstream readiness contract
+        shell: bash
+        run: bash .github/scripts/test-graphite-upstream-baseline-readiness.sh
+
+      - name: Check latest stable Compose and Skiko releases
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/graphite-upstream-baseline-readiness.sh
+
+      - name: Publish Graphite upstream readiness summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f build/graphite-readiness/graphite-upstream-baseline-readiness.txt ]]; then
+            {
+              echo '## Graphite upstream baseline readiness'
+              echo
+              echo '~~~text'
+              cat build/graphite-readiness/graphite-upstream-baseline-readiness.txt
+              echo '~~~'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Graphite upstream readiness evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphite-upstream-baseline-readiness-${{ github.run_id }}
+          path: build/graphite-readiness/graphite-upstream-baseline-readiness.txt
+          if-no-files-found: error
+          retention-days: 90
