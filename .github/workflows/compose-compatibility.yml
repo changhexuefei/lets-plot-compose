@@ -3856,3 +3856,121 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  release-dependency-preflight:
+    needs:
+      - release-candidate-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout release metadata only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            build.gradle.kts
+            gradle.properties
+            README.md
+            CHANGELOG.md
+            docs/release
+          sparse-checkout-cone-mode: false
+
+      - name: Evaluate 3.2.3 release dependency state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          property_value() {
+            local key="$1"
+            sed -n "s/^${key}=//p" gradle.properties | tail -n 1
+          }
+
+          project_version="$(property_value 'letsPlotCompose.version')"
+          core_version="$(property_value 'letsPlot.version')"
+          kotlin_api_version="$(property_value 'letsPlotKotlin.version')"
+
+          test -n "$project_version"
+          test -n "$core_version"
+          test -n "$kotlin_api_version"
+
+          case "$project_version" in
+            3.2.3|3.2.3-SNAPSHOT) ;;
+            *)
+              echo "::error::Unexpected 3.2.3 release-line version: $project_version"
+              exit 1
+              ;;
+          esac
+
+          grep -F 'val letsPlotComposeVersion = providers.gradleProperty("letsPlotCompose.version").get()' build.gradle.kts
+          grep -F 'version = letsPlotComposeVersion' build.gradle.kts
+          grep -F 'val mavenReleasePublishUrl by extra { layout.buildDirectory.dir("maven/artifacts").get().toString() }' build.gradle.kts
+          grep -F 'val uploadMavenArtifacts by tasks.registering' build.gradle.kts
+          grep -F '## [Unreleased]' CHANGELOG.md
+          grep -F '3.2.3-SNAPSHOT' README.md
+
+          blockers=()
+          [[ "$project_version" == *-SNAPSHOT ]] && blockers+=("PROJECT_VERSION_IS_SNAPSHOT")
+          [[ "$core_version" == *-SNAPSHOT ]] && blockers+=("LETS_PLOT_CORE_IS_SNAPSHOT")
+          [[ "$kotlin_api_version" == *-SNAPSHOT ]] && blockers+=("LETS_PLOT_KOTLIN_API_IS_SNAPSHOT")
+
+          if [[ "$project_version" != *-SNAPSHOT ]] &&
+             { [[ "$core_version" == *-SNAPSHOT ]] || [[ "$kotlin_api_version" == *-SNAPSHOT ]]; }; then
+            echo "::error::Release version $project_version must not depend on SNAPSHOT Lets-Plot artifacts."
+            echo "::error::letsPlot.version=$core_version"
+            echo "::error::letsPlotKotlin.version=$kotlin_api_version"
+            exit 1
+          fi
+
+          if [[ "$project_version" == *-SNAPSHOT ]]; then
+            if [[ "$core_version" == *-SNAPSHOT || "$kotlin_api_version" == *-SNAPSHOT ]]; then
+              state="BLOCKED_EXPECTED_PRE_RELEASE"
+              publishable="FALSE"
+              next_required="WAIT_FOR_RELEASED_UPSTREAM_DEPENDENCIES"
+            else
+              state="READY_FOR_VERSION_FINALIZATION"
+              publishable="FALSE"
+              next_required="FINALIZE_PROJECT_VERSION_AND_RELEASE_NOTES"
+            fi
+          else
+            state="READY_FOR_RELEASE_BUILD"
+            publishable="TRUE"
+            next_required="RUN_SIGNED_RELEASE_BUILD_THEN_UPLOAD"
+          fi
+
+          blocker_csv="NONE"
+          if ((${#blockers[@]})); then
+            blocker_csv="$(IFS=,; echo "${blockers[*]}")"
+          fi
+
+          mkdir -p build/release-preflight
+          cat > build/release-preflight/3.2.3-release-preflight.txt <<EOF
+          schema=1
+          result=RELEASE_DEPENDENCY_PREFLIGHT_PASS
+          release.line=3.2.3
+          release.state=$state
+          release.publishable=$publishable
+          release.blockers=$blocker_csv
+          release.next_required=$next_required
+          project.version=$project_version
+          lets_plot_core.version=$core_version
+          lets_plot_kotlin.version=$kotlin_api_version
+          version.source=gradle.properties
+          release.maven_bundle_path=build/maven/artifacts
+          release.upload_task=uploadMavenArtifacts
+          release.external_upload_executed=FALSE
+          release.signing_required_when_final=TRUE
+          production.renderer.default=NATIVE_CANVAS
+          graphite.production=DISABLED
+          workflow.sha=${GITHUB_SHA}
+          workflow.run_id=${GITHUB_RUN_ID}
+          EOF
+
+          cat build/release-preflight/3.2.3-release-preflight.txt
+
+      - name: Upload 3.2.3 release dependency preflight evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dependency-preflight-3.2.3-${{ github.sha }}
+          path: build/release-preflight/3.2.3-release-preflight.txt
+          if-no-files-found: error
+          retention-days: 90
+

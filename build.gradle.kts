@@ -40,10 +40,11 @@ if (project.file("local.properties").exists()) {
     error("Couldn't read local.properties")
 }
 
+val letsPlotComposeVersion = providers.gradleProperty("letsPlotCompose.version").get()
+
 allprojects {
     group = "org.jetbrains.lets-plot"
-    version = "3.2.3-SNAPSHOT"
-//    version = "0.0.0-SNAPSHOT" // for local publishing only
+    version = letsPlotComposeVersion
 
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().all {
         compilerOptions {
