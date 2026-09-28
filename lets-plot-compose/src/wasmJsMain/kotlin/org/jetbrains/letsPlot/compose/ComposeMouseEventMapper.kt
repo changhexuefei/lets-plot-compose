@@ -16,6 +16,7 @@ import kotlin.time.Clock
 
 class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     private val mouseEventPeer = MouseEventPeer()
+    private var dragging: Boolean = false
     private var clickCount: Int = 0
     private var lastClickTime: Long = 0
     private var offsetX: Float = 0f
@@ -54,6 +55,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
 
                 when (event.type) {
                     PointerEventType.Press -> {
+                        dragging = false
                         val currentTime = Clock.System.now().toEpochMilliseconds()
 
                         clickCount = if (currentTime - lastClickTime < 300) {
@@ -67,17 +69,18 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                     }
 
                     PointerEventType.Release -> {
-                        if (clickCount > 0) {
+                        if (PointerInteractionContract.shouldDispatchClick(clickCount, dragging)) {
                             dispatchClick(event, clickCount, density.toDouble())
-                            if (clickCount > 1) {
-                                clickCount = 0 // Reset after a double click
-                            }
                         }
+                        clickCount = PointerInteractionContract.clickCountAfterRelease(clickCount, dragging)
+                        dragging = false
                         mouseEventPeer.dispatch(MOUSE_RELEASED, mouseEvent)
                     }
 
-                    PointerEventType.Move ->
+                    PointerEventType.Move -> {
+                        dragging = change.pressed
                         mouseEventPeer.dispatch(PointerInteractionContract.moveEventSpec(change.pressed), mouseEvent)
+                    }
 
                     PointerEventType.Enter -> {
                         mouseEventPeer.dispatch(MOUSE_ENTERED, mouseEvent)
