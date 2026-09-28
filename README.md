@@ -35,12 +35,21 @@ The current cross-platform regression baseline also verifies the following behav
 | --- | --- | --- | --- |
 | Compose Canvas plot rendering | Yes | Yes | Yes |
 | Default Pan / Rubber Band Zoom / Centerpoint Zoom / Reset toolbar | Yes | Yes | Yes |
+| Toolbarless external FigureModel pan/zoom feedback | Yes | Yes | Yes |
 | Shared pointer drag / move / wheel interaction contract | Yes | Yes | Yes |
 | Ctrl / Alt / Shift / Meta interaction modifiers | Yes | Yes | Yes |
 | Computation-message redispatch after plot-spec replacement | Yes | Yes | Yes |
 | Hyperlink navigation | Yes | Yes | Yes |
 
 The toolbar implementation and interaction contract are shared from common code where practical, while platform adapters retain only the platform-specific event and navigation integration. The compatibility CI compiles all three targets and emits dedicated regression evidence for these contracts.
+
+The primary Compose API also supports a minimal call with sensible defaults:
+
+```kotlin
+PlotPanel(figure = myPlot)
+```
+
+`modifier`, aspect-ratio handling, and computation-message callbacks can be supplied only when an application needs to customize them.
 
 ### Release-Candidate Evidence
 

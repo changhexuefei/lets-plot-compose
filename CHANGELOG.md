@@ -28,6 +28,8 @@ Current development baseline:
 - Compatibility CI scope gate that skips the heavy matrix for readiness-only metadata changes while preserving full CI for source, dependency-version, and compatibility-workflow changes.
 - Live readiness-only workflow acceptance proving the scope gate skips both heavy roots and the downstream compatibility/release graph on GitHub Actions.
 - Lightweight Graphite upstream-baseline watcher that keeps the experimental renderer baseline frozen until stable Compose >= 1.13.0 and Skiko >= 0.153.0 are both available, then requests a fresh compatibility probe without changing production rendering.
+- Cross-platform toolbarless interaction feedback ownership so external FigureModel pan/zoom state updates consistently on Desktop, Android, and WasmJS.
+- Source-compatible PlotPanel/PlotPanelRaw defaults for modifier, aspect-ratio, and computation-message callback ergonomics, verified by standalone published consumers.
 
 ### Changed
 
@@ -43,6 +45,7 @@ Current development baseline:
 - Android no longer discards keyboard modifiers or always prefers the vertical wheel delta.
 - Reusing one PlotPanel for a different raw spec no longer suppresses computation messages after the first figure.
 - Toolbar SVG icons now use common Compose ImageVector rendering instead of a Desktop/Skiko-only SVG decoder.
+- Drag releases no longer dispatch accidental click events on Desktop/Wasm, and Android now resets the click sequence after a dragged release.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). All scales should have the 'format' parameter.

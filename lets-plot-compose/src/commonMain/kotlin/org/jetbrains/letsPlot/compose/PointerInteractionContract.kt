@@ -17,6 +17,12 @@ internal object PointerInteractionContract {
     fun dominantScrollAmount(x: Double, y: Double): Double =
         if (abs(x) > abs(y)) x else y
 
+    fun shouldDispatchClick(clickCount: Int, dragged: Boolean): Boolean =
+        clickCount > 0 && !dragged
+
+    fun clickCountAfterRelease(clickCount: Int, dragged: Boolean): Int =
+        if (dragged || clickCount > 1) 0 else clickCount
+
     fun keyModifiers(
         isCtrl: Boolean,
         isAlt: Boolean,

@@ -37,6 +37,28 @@ class PointerInteractionContractTest {
     }
 
     @Test
+    fun draggedReleaseSuppressesClickAndResetsClickSequence() {
+        assertFalse(PointerInteractionContract.shouldDispatchClick(clickCount = 1, dragged = true))
+        assertEquals(
+            0,
+            PointerInteractionContract.clickCountAfterRelease(clickCount = 1, dragged = true)
+        )
+    }
+
+    @Test
+    fun normalReleasePreservesSingleClickForDoubleClickDetection() {
+        assertTrue(PointerInteractionContract.shouldDispatchClick(clickCount = 1, dragged = false))
+        assertEquals(
+            1,
+            PointerInteractionContract.clickCountAfterRelease(clickCount = 1, dragged = false)
+        )
+        assertEquals(
+            0,
+            PointerInteractionContract.clickCountAfterRelease(clickCount = 2, dragged = false)
+        )
+    }
+
+    @Test
     fun keyboardModifiersPreserveAllComposeModifierFlags() {
         val modifiers = PointerInteractionContract.keyModifiers(
             isCtrl = true,

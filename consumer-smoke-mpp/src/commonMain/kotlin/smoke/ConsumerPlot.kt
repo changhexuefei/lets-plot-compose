@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import org.jetbrains.letsPlot.compose.PlotPanel
+import org.jetbrains.letsPlot.compose.PlotPanelRaw
 import org.jetbrains.letsPlot.geom.geomPoint
 import org.jetbrains.letsPlot.letsPlot
 
@@ -20,7 +21,18 @@ fun ConsumerPlot() {
 
     PlotPanel(
         figure = figure,
-        modifier = Modifier.fillMaxSize(),
-        computationMessagesHandler = {}
+        modifier = Modifier.fillMaxSize()
     )
+}
+
+@Suppress("unused")
+@Composable
+private fun PublicApiDefaultsCompileProbe() {
+    PlotPanel(
+        figure = letsPlot(mapOf("x" to listOf(1), "y" to listOf(1))) + geomPoint {
+            x = "x"
+            y = "y"
+        }
+    )
+    PlotPanelRaw(rawSpec = mutableMapOf())
 }

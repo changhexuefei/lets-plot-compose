@@ -89,6 +89,17 @@ fun PlotPanelComposeCanvas(
 
     var errorMessage: String? by remember(processedPlotSpec, panelSize) { mutableStateOf(null) }
 
+    val hasToolbar = GG_TOOLBAR in processedPlotSpec
+    val defaultInteractionFeedbackOwner = remember(figureModel, hasToolbar) {
+        DefaultInteractionFeedbackOwner(
+            figureModel = figureModel,
+            hasToolbar = hasToolbar,
+            errorMessageHandler = { message ->
+                LOG.info { "Figure interaction error: $message" }
+            }
+        )
+    }
+
     var redrawTrigger by remember { mutableIntStateOf(0) }
 
     val androidCanvasPeer = remember { AndroidCanvasPeer() }
@@ -139,11 +150,17 @@ fun PlotPanelComposeCanvas(
     }
 
 
-    DisposableEffect(plotComponentRegistrations, dispatcherOwner) {
+    DisposableEffect(plotComponentRegistrations, dispatcherOwner, defaultInteractionFeedbackOwner) {
         onDispose {
             // Release only the dispatcher owned by this composition. A newer composition may
             // already have rebound the same FigureModel to a replacement PlotCanvasDrawable.
             dispatcherOwner.release()
+
+            try {
+                defaultInteractionFeedbackOwner.dispose()
+            } catch (e: Exception) {
+                LOG.error(e) { "default interaction feedback dispose failed: ${e.message}" }
+            }
 
             // Try/catch to ensure that any exception in dispose() does not break the Composable lifecycle
             // Otherwise, the app window gets unclosable.
@@ -156,7 +173,7 @@ fun PlotPanelComposeCanvas(
     }
 
     Column(modifier = finalModifier) {
-        if (GG_TOOLBAR in processedPlotSpec) {
+        if (hasToolbar) {
             PlotToolbar(figureModel)
         }
 
@@ -298,6 +315,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
 
                 when (event.type) {
                     PointerEventType.Press -> {
+                        dragging = false
                         val currentTime = System.currentTimeMillis()
                         clickCount = if (currentTime - lastClickTime < 300) {
                             clickCount + 1
@@ -310,14 +328,12 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                     }
 
                     PointerEventType.Release -> {
-                        if (clickCount > 0 && !dragging) {
+                        if (PointerInteractionContract.shouldDispatchClick(clickCount, dragging)) {
                             val pos = event.changes.first().position
                             dispatchClick(pos, clickCount, density.toDouble(), modifiers)
-                            if (clickCount > 1) {
-                                clickCount = 0 // Reset after a double click
-                            }
                         }
 
+                        clickCount = PointerInteractionContract.clickCountAfterRelease(clickCount, dragging)
                         dragging = false
                         mouseEventPeer.dispatch(MOUSE_RELEASED, mouseEvent)
                     }

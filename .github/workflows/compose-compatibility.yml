@@ -199,7 +199,8 @@ jobs:
           hyperlink.android=COMPOSE_URI_HANDLER
           hyperlink.android.lifecycle=DISPOSED
           hyperlink.wasm=BROWSER_WINDOW_OPEN
-          public.api.change=NONE
+          figure_model.toolbarless_feedback=PASS
+          public.api.change=SOURCE_COMPATIBLE_DEFAULTS
           production.renderer.default=NATIVE_CANVAS
           graphite.change=NONE
           workflow.sha=${GITHUB_SHA}
@@ -229,6 +230,7 @@ jobs:
 
           grep -R -q "PointerInteractionContractTest" "$test_results"
           grep -R -q "PlotFigureModelDispatcherOwnerTest" "$test_results"
+          grep -R -q "DefaultInteractionFeedbackOwnerTest" "$test_results"
 
           evidence_dir="compose/lets-plot-compose/build/interaction-contract"
           mkdir -p "$evidence_dir"
@@ -243,6 +245,9 @@ jobs:
           pointer.unpressed_move=MOUSE_MOVED
           pointer.wheel_axis=DOMINANT_ABSOLUTE_DELTA
           pointer.modifiers=CTRL_ALT_SHIFT_META
+          pointer.drag_release_click=SUPPRESSED
+          pointer.drag_release_click_sequence=RESET
+          figure_model.toolbarless_feedback=PASS
           figure_model.dispatcher_ownership=PASS
           figure_model.stale_release=SAFE
           production.renderer.default=NATIVE_CANVAS
@@ -544,7 +549,8 @@ jobs:
           compose.version=1.12.1
           kotlin.version=2.4.20
           lets_plot_compose.version=3.2.3-SNAPSHOT
-          public.api.change=NONE
+          public.api.defaults_compile=PASS
+          public.api.change=SOURCE_COMPATIBLE_DEFAULTS
           production.renderer.default=NATIVE_CANVAS
           workflow.sha=${GITHUB_SHA}
           workflow.run_id=${GITHUB_RUN_ID}
@@ -3866,6 +3872,8 @@ jobs:
           assert_line 'android.release_aar=PASS' "$multiplatform_smoke"
           assert_line 'wasm.production_bundle=PASS' "$multiplatform_smoke"
           assert_line 'wasm.binary=PASS' "$multiplatform_smoke"
+          assert_line 'public.api.defaults_compile=PASS' "$multiplatform_smoke"
+          assert_line 'public.api.change=SOURCE_COMPATIBLE_DEFAULTS' "$multiplatform_smoke"
 
           compose_repo='evidence/frontend/compose'
           root_dir="$(find "$compose_repo" -type d -path '*/lets-plot-compose/3.2.3-SNAPSHOT' -print -quit)"
@@ -3911,7 +3919,8 @@ jobs:
           production.renderer.default=NATIVE_CANVAS
           graphite.production=DISABLED
           graphite.readiness=SEPARATE_EXPERIMENTAL_GATE
-          public.api.change=NONE
+          public.api.defaults_compile=PASS
+          public.api.change=SOURCE_COMPATIBLE_DEFAULTS
           workflow.sha=${GITHUB_SHA}
           workflow.run_id=${GITHUB_RUN_ID}
           EOF

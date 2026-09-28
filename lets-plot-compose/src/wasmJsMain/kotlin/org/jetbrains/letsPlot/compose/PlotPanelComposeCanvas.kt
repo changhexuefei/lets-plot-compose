@@ -79,6 +79,17 @@ fun PlotPanelComposeCanvas(
 
     var errorMessage: String? by remember(processedPlotSpec, panelSize) { mutableStateOf(null) }
 
+    val hasToolbar = GG_TOOLBAR in processedPlotSpec
+    val defaultInteractionFeedbackOwner = remember(figureModel, hasToolbar) {
+        DefaultInteractionFeedbackOwner(
+            figureModel = figureModel,
+            hasToolbar = hasToolbar,
+            errorMessageHandler = { message ->
+                LOG.info { "Figure interaction error: $message" }
+            }
+        )
+    }
+
     var redrawTrigger by remember { mutableStateOf(0) }
 
     val skiaCanvasPeer = remember { SkiaCanvasPeer(SkiaFontManager.DEFAULT) }
@@ -122,11 +133,17 @@ fun PlotPanelComposeCanvas(
     }
 
 
-    DisposableEffect(plotComponentRegistrations, dispatcherOwner) {
+    DisposableEffect(plotComponentRegistrations, dispatcherOwner, defaultInteractionFeedbackOwner) {
         onDispose {
             // Release only the dispatcher owned by this composition. A newer composition may
             // already have rebound the same FigureModel to a replacement PlotCanvasDrawable.
             dispatcherOwner.release()
+
+            try {
+                defaultInteractionFeedbackOwner.dispose()
+            } catch (e: Exception) {
+                LOG.error(e) { "default interaction feedback dispose failed: ${e.message}" }
+            }
 
             // Try/catch to ensure that any exception in dispose() does not break the Composable lifecycle.
             try {
@@ -138,7 +155,7 @@ fun PlotPanelComposeCanvas(
     }
 
     Column(modifier = finalModifier) {
-        if (GG_TOOLBAR in processedPlotSpec) {
+        if (hasToolbar) {
             PlotToolbar(figureModel)
         }
 
