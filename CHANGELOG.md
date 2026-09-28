@@ -45,6 +45,7 @@ Current development baseline:
 - Android no longer discards keyboard modifiers or always prefers the vertical wheel delta.
 - Reusing one PlotPanel for a different raw spec no longer suppresses computation messages after the first figure.
 - Toolbar SVG icons now use common Compose ImageVector rendering instead of a Desktop/Skiko-only SVG decoder.
+- Drag releases no longer dispatch accidental click events on Desktop/Wasm, and Android now resets the click sequence after a dragged release.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). All scales should have the 'format' parameter.
