@@ -150,7 +150,18 @@ async function waitForServer(page) {
     });
 
     await waitForServer(page);
-    await page.waitForSelector('#ComposeTarget canvas', { state: 'visible', timeout: 30000 });
+    try {
+      await page.waitForSelector('canvas', { state: 'visible', timeout: 30000 });
+    } catch (error) {
+      const title = await page.title().catch(() => '<unavailable>');
+      const body = await page.locator('body').innerText().catch(() => '<unavailable>');
+      console.error('WASM_BROWSER_DIAGNOSTIC url=' + page.url());
+      console.error('WASM_BROWSER_DIAGNOSTIC title=' + title);
+      console.error('WASM_BROWSER_DIAGNOSTIC body=' + body.slice(0, 2000));
+      console.error('WASM_BROWSER_DIAGNOSTIC consoleErrors=' + consoleErrors.join(' | '));
+      console.error('WASM_BROWSER_DIAGNOSTIC pageErrors=' + pageErrors.join(' | '));
+      throw error;
+    }
     await page.waitForTimeout(1800);
 
     const canvas = await largestCanvas(page);
