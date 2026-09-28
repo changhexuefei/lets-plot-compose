@@ -151,9 +151,22 @@ mapfile -t payloads < <(
 payload_count="${#payloads[@]}"
 [[ "$payload_count" -gt 0 ]] || fail "No release payloads found"
 
+payload_sha256_count=0
+payload_sha512_count=0
+signature_sha256_count=0
+signature_sha512_count=0
+
 for file in "${payloads[@]}"; do
   verify_checksum "$file"
   verify_signature "$file"
+
+  [[ -s "${file}.sha256" ]] && ((payload_sha256_count += 1))
+  [[ -s "${file}.sha512" ]] && ((payload_sha512_count += 1))
+
+  signature="${file}.asc"
+  verify_checksum "$signature"
+  [[ -s "${signature}.sha256" ]] && ((signature_sha256_count += 1))
+  [[ -s "${signature}.sha512" ]] && ((signature_sha512_count += 1))
 
   case "$file" in
     *.pom|*.module|*.json)
@@ -165,15 +178,24 @@ for file in "${payloads[@]}"; do
 done
 
 signature_count="$(find "$group_root" -path "*/$version/*.asc" -type f | wc -l | tr -d ' ')"
-sha256_count="$(find "$group_root" -path "*/$version/*.sha256" -type f | wc -l | tr -d ' ')"
-sha512_count="$(find "$group_root" -path "*/$version/*.sha512" -type f | wc -l | tr -d ' ')"
+total_sha256_count="$(find "$group_root" -path "*/$version/*.sha256" -type f | wc -l | tr -d ' ')"
+total_sha512_count="$(find "$group_root" -path "*/$version/*.sha512" -type f | wc -l | tr -d ' ')"
+expected_total_checksum_count=$((payload_count + signature_count))
 
 [[ "$signature_count" -eq "$payload_count" ]] ||
   fail "Detached signature coverage is not complete: payloads=$payload_count signatures=$signature_count"
-[[ "$sha256_count" -eq "$payload_count" ]] ||
-  fail "SHA-256 coverage is not complete: payloads=$payload_count sha256=$sha256_count"
-[[ "$sha512_count" -eq "$payload_count" ]] ||
-  fail "SHA-512 coverage is not complete: payloads=$payload_count sha512=$sha512_count"
+[[ "$payload_sha256_count" -eq "$payload_count" ]] ||
+  fail "Payload SHA-256 coverage is not complete: payloads=$payload_count sha256=$payload_sha256_count"
+[[ "$payload_sha512_count" -eq "$payload_count" ]] ||
+  fail "Payload SHA-512 coverage is not complete: payloads=$payload_count sha512=$payload_sha512_count"
+[[ "$signature_sha256_count" -eq "$signature_count" ]] ||
+  fail "Signature SHA-256 coverage is not complete: signatures=$signature_count sha256=$signature_sha256_count"
+[[ "$signature_sha512_count" -eq "$signature_count" ]] ||
+  fail "Signature SHA-512 coverage is not complete: signatures=$signature_count sha512=$signature_sha512_count"
+[[ "$total_sha256_count" -eq "$expected_total_checksum_count" ]] ||
+  fail "Unexpected SHA-256 inventory: expected=$expected_total_checksum_count actual=$total_sha256_count"
+[[ "$total_sha512_count" -eq "$expected_total_checksum_count" ]] ||
+  fail "Unexpected SHA-512 inventory: expected=$expected_total_checksum_count actual=$total_sha512_count"
 
 if unzip -Z1 "$archive" | grep -F 'SNAPSHOT' >/dev/null; then
   fail "Release bundle ZIP contains a SNAPSHOT path"
@@ -192,11 +214,17 @@ mkdir -p "$(dirname "$output")"
   echo "archive.size_bytes=$archive_size_bytes"
   echo "payload.count=$payload_count"
   echo "signature.count=$signature_count"
-  echo "sha256.count=$sha256_count"
-  echo "sha512.count=$sha512_count"
+  echo "payload.sha256.count=$payload_sha256_count"
+  echo "payload.sha512.count=$payload_sha512_count"
+  echo "signature.sha256.count=$signature_sha256_count"
+  echo "signature.sha512.count=$signature_sha512_count"
+  echo "checksum.sha256.total=$total_sha256_count"
+  echo "checksum.sha512.total=$total_sha512_count"
   echo "signed_payload_coverage=$signature_count/$payload_count"
-  echo "sha256_payload_coverage=$sha256_count/$payload_count"
-  echo "sha512_payload_coverage=$sha512_count/$payload_count"
+  echo "payload_sha256_coverage=$payload_sha256_count/$payload_count"
+  echo "payload_sha512_coverage=$payload_sha512_count/$payload_count"
+  echo "signature_sha256_coverage=$signature_sha256_count/$signature_count"
+  echo "signature_sha512_coverage=$signature_sha512_count/$signature_count"
   echo "inventory.begin"
   for file in "${payloads[@]}"; do
     relative="${file#"$group_root"/}"
@@ -220,9 +248,13 @@ rehearsal.signing=EPHEMERAL_CI_KEY
 rehearsal.signature_verification=PASS
 rehearsal.signature_coverage=$signature_count/$payload_count
 rehearsal.sha256_verification=PASS
-rehearsal.sha256_coverage=$sha256_count/$payload_count
+rehearsal.payload_sha256_coverage=$payload_sha256_count/$payload_count
+rehearsal.signature_sha256_coverage=$signature_sha256_count/$signature_count
 rehearsal.sha512_verification=PASS
-rehearsal.sha512_coverage=$sha512_count/$payload_count
+rehearsal.payload_sha512_coverage=$payload_sha512_count/$payload_count
+rehearsal.signature_sha512_coverage=$signature_sha512_count/$signature_count
+rehearsal.sha256_total=$total_sha256_count
+rehearsal.sha512_total=$total_sha512_count
 rehearsal.maven_structure=PASS
 rehearsal.pom_no_snapshot=PASS
 rehearsal.root_metadata_targets=PASS
