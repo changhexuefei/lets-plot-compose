@@ -22,7 +22,6 @@ import org.jetbrains.letsPlot.core.plot.builder.interact.tools.FigureModel
  * @param modifier Modifier for the plot container
  * @param errorTextStyle Text style for error messages
  * @param errorModifier Modifier for error message container
- * @param legacyRendering Whether to use legacy rendering (SVG-based)
  * @param computationMessagesHandler Callback for computation messages
  *
  * Example with external FigureModel:
@@ -63,9 +62,9 @@ import org.jetbrains.letsPlot.core.plot.builder.interact.tools.FigureModel
 expect fun PlotPanelRaw(
     rawSpec: MutableMap<String, Any>,
     figureModel: PlotFigureModel? = null,
-    preserveAspectRatio: Boolean,
-    modifier: Modifier,
+    preserveAspectRatio: Boolean = false,
+    modifier: Modifier = Modifier,
     errorTextStyle: TextStyle = TextStyle(color = Color(0xFF700000)),
     errorModifier: Modifier = Modifier.padding(16.dp),
-    computationMessagesHandler: (List<String>) -> Unit
+    computationMessagesHandler: (List<String>) -> Unit = {}
 )
