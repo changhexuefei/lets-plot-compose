@@ -27,6 +27,7 @@ import kotlinx.coroutines.delay
 import org.jetbrains.letsPlot.Figure
 import org.jetbrains.letsPlot.compose.PlotFigureModel
 import org.jetbrains.letsPlot.compose.PlotPanel
+import org.jetbrains.letsPlot.compose.PlotPanelRaw
 import org.jetbrains.letsPlot.core.interact.InteractionSpec
 import org.jetbrains.letsPlot.geom.geomPoint
 import org.jetbrains.letsPlot.letsPlot
@@ -349,6 +350,13 @@ private fun SmokeContent(
             }
         }
     }
+}
+
+@Suppress("unused")
+@Composable
+private fun PublicApiDefaultsCompileProbe(figure: Figure) {
+    PlotPanel(figure = figure)
+    PlotPanelRaw(rawSpec = mutableMapOf())
 }
 
 private fun createFigure(): Figure {
