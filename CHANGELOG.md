@@ -30,6 +30,7 @@ Current development baseline:
 - Lightweight Graphite upstream-baseline watcher that keeps the experimental renderer baseline frozen until stable Compose >= 1.13.0 and Skiko >= 0.153.0 are both available, then requests a fresh compatibility probe without changing production rendering.
 - Cross-platform toolbarless interaction feedback ownership so external FigureModel pan/zoom state updates consistently on Desktop, Android, and WasmJS.
 - Source-compatible PlotPanel/PlotPanelRaw defaults for modifier, aspect-ratio, and computation-message callback ergonomics, verified by standalone published consumers.
+- Published-Maven WasmJS browser runtime smoke covering render, tooltip, toolbarless wheel zoom, and drag pan with retained screenshots.
 
 ### Changed
 
