@@ -3879,7 +3879,23 @@ jobs:
         shell: bash
         run: bash -n .github/scripts/release-preflight.sh
 
-      - name: Evaluate 3.2.3 release dependency state
+      - name: Probe known released upstream dependencies
+        shell: bash
+        run: |
+          mkdir -p build/release-preflight
+          cp gradle.properties build/release-preflight/released-upstream.properties
+          sed -i 's/^letsPlot.version=.*/letsPlot.version=4.11.0/' build/release-preflight/released-upstream.properties
+          sed -i 's/^letsPlotKotlin.version=.*/letsPlotKotlin.version=4.15.0/' build/release-preflight/released-upstream.properties
+
+          RELEASE_PROPERTIES_FILE=build/release-preflight/released-upstream.properties \
+          RELEASE_PREFLIGHT_OUTPUT=build/release-preflight/released-upstream-probe.txt \
+            bash .github/scripts/release-preflight.sh
+
+          grep -Fx 'release.state=READY_FOR_VERSION_FINALIZATION' build/release-preflight/released-upstream-probe.txt
+          grep -Fx 'lets_plot_core.central_check=PASS' build/release-preflight/released-upstream-probe.txt
+          grep -Fx 'lets_plot_kotlin.central_check=PASS' build/release-preflight/released-upstream-probe.txt
+
+      - name: Evaluate current 3.2.3 release dependency state
         shell: bash
         run: bash .github/scripts/release-preflight.sh
 
