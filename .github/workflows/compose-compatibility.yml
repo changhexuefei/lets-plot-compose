@@ -3907,3 +3907,131 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  release-bundle-rehearsal:
+    needs:
+      - release-dependency-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout release rehearsal source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 release build runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Validate release bundle rehearsal script
+        shell: bash
+        run: bash -n .github/scripts/release-bundle-rehearsal.sh
+
+      - name: Configure isolated release rehearsal
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > local.properties <<EOF
+          sonatype.username=
+          sonatype.password=
+          EOF
+
+          gpg_home="${RUNNER_TEMP}/lets-plot-release-rehearsal-gnupg"
+          key_config="${RUNNER_TEMP}/lets-plot-release-rehearsal-key.conf"
+          secret_ring="${RUNNER_TEMP}/lets-plot-release-rehearsal-secring.gpg"
+          passphrase="lets-plot-ci-release-rehearsal"
+
+          mkdir -p "$gpg_home"
+          chmod 700 "$gpg_home"
+
+          cat > "$key_config" <<EOF
+          Key-Type: RSA
+          Key-Length: 2048
+          Subkey-Type: RSA
+          Subkey-Length: 2048
+          Name-Real: Lets Plot CI Release Rehearsal
+          Name-Email: release-rehearsal@example.invalid
+          Expire-Date: 1d
+          Passphrase: $passphrase
+          %commit
+          EOF
+
+          gpg --homedir "$gpg_home" --batch --pinentry-mode loopback --generate-key "$key_config"
+
+          full_key_id="$(gpg --homedir "$gpg_home" --batch --with-colons --list-secret-keys |
+            awk -F: '$1 == "sec" { print $5; exit }')"
+          test -n "$full_key_id"
+          short_key_id="${full_key_id: -8}"
+
+          gpg --homedir "$gpg_home" --batch --pinentry-mode loopback \
+            --passphrase "$passphrase" --export-secret-keys "$full_key_id" > "$secret_ring"
+
+          test -s "$secret_ring"
+
+          echo "REHEARSAL_GPG_HOME=$gpg_home" >> "$GITHUB_ENV"
+          echo "REHEARSAL_SIGNING_KEY_ID=$short_key_id" >> "$GITHUB_ENV"
+          echo "REHEARSAL_SIGNING_PASSWORD=$passphrase" >> "$GITHUB_ENV"
+          echo "REHEARSAL_SIGNING_SECRET_RING=$secret_ring" >> "$GITHUB_ENV"
+
+      - name: Build signed 3.2.3 release publications locally
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            -PletsPlotCompose.version=3.2.3 \
+            -PletsPlot.version=4.11.0 \
+            -PletsPlotKotlin.version=4.15.0 \
+            -Psigning.keyId="$REHEARSAL_SIGNING_KEY_ID" \
+            -Psigning.password="$REHEARSAL_SIGNING_PASSWORD" \
+            -Psigning.secretKeyRingFile="$REHEARSAL_SIGNING_SECRET_RING" \
+            :platf-android:publishAndroidReleasePublicationToMavenRepository \
+            :platf-android:publishKotlinMultiplatformPublicationToMavenRepository \
+            :lets-plot-compose:publishAndroidReleasePublicationToMavenRepository \
+            :lets-plot-compose:publishDesktopPublicationToMavenRepository \
+            :lets-plot-compose:publishWasmJsPublicationToMavenRepository \
+            :lets-plot-compose:publishKotlinMultiplatformPublicationToMavenRepository \
+            --no-daemon \
+            --stacktrace
+
+      - name: Package local release bundle
+        shell: bash
+        run: |
+          ./gradlew \
+            -PletsPlotCompose.version=3.2.3 \
+            packageMavenArtifacts \
+            --no-daemon \
+            --stacktrace
+
+      - name: Verify signed release bundle rehearsal
+        shell: bash
+        run: |
+          RELEASE_REHEARSAL_VERSION=3.2.3 \
+          RELEASE_REHEARSAL_REPO_ROOT=build/maven/artifacts/org/jetbrains/lets-plot \
+          RELEASE_REHEARSAL_ARCHIVE=build/lets-plot-compose-artifacts.zip \
+          bash .github/scripts/release-bundle-rehearsal.sh
+
+      - name: Remove ephemeral signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "${REHEARSAL_GPG_HOME:-}" || true
+          rm -f "${REHEARSAL_SIGNING_SECRET_RING:-}" || true
+
+      - name: Upload 3.2.3 release bundle rehearsal evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle-rehearsal-3.2.3-${{ github.sha }}
+          path: build/release-rehearsal/3.2.3-release-bundle-rehearsal.txt
+          if-no-files-found: error
+          retention-days: 90
+
