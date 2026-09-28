@@ -315,6 +315,7 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
 
                 when (event.type) {
                     PointerEventType.Press -> {
+                        dragging = false
                         val currentTime = System.currentTimeMillis()
                         clickCount = if (currentTime - lastClickTime < 300) {
                             clickCount + 1
@@ -327,14 +328,12 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
                     }
 
                     PointerEventType.Release -> {
-                        if (clickCount > 0 && !dragging) {
+                        if (PointerInteractionContract.shouldDispatchClick(clickCount, dragging)) {
                             val pos = event.changes.first().position
                             dispatchClick(pos, clickCount, density.toDouble(), modifiers)
-                            if (clickCount > 1) {
-                                clickCount = 0 // Reset after a double click
-                            }
                         }
 
+                        clickCount = PointerInteractionContract.clickCountAfterRelease(clickCount, dragging)
                         dragging = false
                         mouseEventPeer.dispatch(MOUSE_RELEASED, mouseEvent)
                     }
