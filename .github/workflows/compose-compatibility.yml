@@ -58,7 +58,7 @@ jobs:
             run_full=false
             while IFS= read -r path; do
               case "$path" in
-                .github/scripts/upstream-release-readiness.sh|                .github/scripts/test-upstream-release-readiness.sh|                .github/workflows/upstream-release-readiness.yml|                docs/release/3.2.3-release-checklist.md|                CHANGELOG.md)
+                .github/scripts/upstream-release-readiness.sh|.github/scripts/test-upstream-release-readiness.sh|.github/workflows/upstream-release-readiness.yml|docs/release/3.2.3-release-checklist.md|CHANGELOG.md)
                   ;;
                 *)
                   run_full=true
