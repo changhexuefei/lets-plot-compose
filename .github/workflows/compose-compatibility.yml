@@ -3773,15 +3773,29 @@ jobs:
           test -n "$multiplatform_smoke"
           test -s "$multiplatform_smoke"
 
-          grep -Fx 'platform=windows' "$desktop_manifest"
-          grep -Fx 'jdk=21' "$desktop_manifest"
-          grep -Fx 'comparison.required_screenshots=9' "$desktop_manifest"
+          echo "Desktop baseline manifest: $desktop_manifest"
+          echo "Desktop smoke summary: $desktop_smoke"
+          echo "Multiplatform smoke summary: $multiplatform_smoke"
 
-          grep -Fx 'result=MULTIPLATFORM_CONSUMER_SMOKE_PASS' "$multiplatform_smoke"
-          grep -Fx 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$multiplatform_smoke"
-          grep -Fx 'android.release_aar=PASS' "$multiplatform_smoke"
-          grep -Fx 'wasm.production_bundle=PASS' "$multiplatform_smoke"
-          grep -Fx 'wasm.binary=PASS' "$multiplatform_smoke"
+          # Windows evidence is written by PowerShell and therefore uses CRLF.
+          # Normalize line endings before exact contract checks so the Linux
+          # readiness gate validates content rather than host text format.
+          assert_line() {
+            local expected="$1"
+            local file="$2"
+            tr -d '\r' < "$file" | grep -Fqx -- "$expected"
+          }
+
+          assert_line 'platform=windows' "$desktop_manifest"
+          assert_line 'jdk=21' "$desktop_manifest"
+          assert_line 'comparison.required_screenshots=9' "$desktop_manifest"
+          assert_line 'result=PASS' "$desktop_smoke"
+
+          assert_line 'result=MULTIPLATFORM_CONSUMER_SMOKE_PASS' "$multiplatform_smoke"
+          assert_line 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$multiplatform_smoke"
+          assert_line 'android.release_aar=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.production_bundle=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.binary=PASS' "$multiplatform_smoke"
 
           compose_repo='evidence/frontend/compose'
           root_dir="$(find "$compose_repo" -type d -path '*/lets-plot-compose/3.2.3-SNAPSHOT' -print -quit)"
