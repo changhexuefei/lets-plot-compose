@@ -3729,3 +3729,130 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  release-candidate-readiness:
+    needs:
+      - compose-compatibility
+      - core-jvm-bundle
+      - windows-consumer-smoke
+      - multiplatform-consumer-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download Desktop published-consumer evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-skiko-baseline-windows-jdk21-software-${{ github.sha }}
+          path: evidence/desktop
+
+      - name: Download Android and Wasm published-consumer evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: multiplatform-consumer-smoke-${{ github.sha }}
+          path: evidence/multiplatform
+
+      - name: Download frontend Maven publication bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: evidence/frontend
+
+      - name: Verify 3.2.3 release-candidate contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          desktop_manifest="$(find evidence/desktop -name 'baseline-manifest.txt' -type f -print -quit)"
+          desktop_smoke="$(find evidence/desktop -name 'smoke-summary.txt' -type f -print -quit)"
+          multiplatform_smoke="$(find evidence/multiplatform -name 'multiplatform-consumer-smoke.txt' -type f -print -quit)"
+
+          test -n "$desktop_manifest"
+          test -s "$desktop_manifest"
+          test -n "$desktop_smoke"
+          test -s "$desktop_smoke"
+          test -n "$multiplatform_smoke"
+          test -s "$multiplatform_smoke"
+
+          echo "Desktop baseline manifest: $desktop_manifest"
+          echo "Desktop smoke summary: $desktop_smoke"
+          echo "Multiplatform smoke summary: $multiplatform_smoke"
+
+          # Windows evidence is written by PowerShell and therefore uses CRLF.
+          # Normalize line endings before exact contract checks so the Linux
+          # readiness gate validates content rather than host text format.
+          assert_line() {
+            local expected="$1"
+            local file="$2"
+            tr -d '\r' < "$file" | grep -Fqx -- "$expected"
+          }
+
+          assert_line 'platform=windows' "$desktop_manifest"
+          assert_line 'jdk=21' "$desktop_manifest"
+          assert_line 'comparison.required_screenshots=9' "$desktop_manifest"
+          assert_line 'result=PASS' "$desktop_smoke"
+
+          assert_line 'result=MULTIPLATFORM_CONSUMER_SMOKE_PASS' "$multiplatform_smoke"
+          assert_line 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$multiplatform_smoke"
+          assert_line 'android.release_aar=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.production_bundle=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.binary=PASS' "$multiplatform_smoke"
+
+          compose_repo='evidence/frontend/compose'
+          root_dir="$(find "$compose_repo" -type d -path '*/lets-plot-compose/3.2.3-SNAPSHOT' -print -quit)"
+          desktop_dir="$(find "$compose_repo" -type d -path '*/lets-plot-compose-desktop/3.2.3-SNAPSHOT' -print -quit)"
+          android_dir="$(find "$compose_repo" -type d -path '*/lets-plot-compose-android/3.2.3-SNAPSHOT' -print -quit)"
+          wasm_dir="$(find "$compose_repo" -type d -path '*/lets-plot-compose-wasm-js/3.2.3-SNAPSHOT' -print -quit)"
+
+          for published_dir in "$root_dir" "$desktop_dir" "$android_dir" "$wasm_dir"; do
+            test -n "$published_dir"
+            test -d "$published_dir"
+            test -n "$(find "$published_dir" -maxdepth 1 -type f -print -quit)"
+          done
+
+          root_module="$(find "$root_dir" -maxdepth 1 -name '*.module' -type f -print -quit)"
+          test -n "$root_module"
+          test -s "$root_module"
+          grep -F '"module": "lets-plot-compose-desktop"' "$root_module"
+          grep -F '"module": "lets-plot-compose-android"' "$root_module"
+          grep -F '"module": "lets-plot-compose-wasm-js"' "$root_module"
+
+          mkdir -p evidence/readiness
+          cat > evidence/readiness/3.2.3-rc-readiness.txt <<EOF
+          schema=1
+          result=RELEASE_CANDIDATE_READINESS_PASS
+          release.line=3.2.3-SNAPSHOT
+          consumer.boundary=PUBLISHED_MAVEN_ONLY
+          desktop.consumer=PASS
+          desktop.platform=WINDOWS
+          desktop.jdk=21
+          desktop.required_screenshots=9
+          android.consumer=PASS
+          android.release_aar=PASS
+          wasm.consumer=PASS
+          wasm.production_bundle=PASS
+          wasm.binary=PASS
+          publication.root=PASS
+          publication.desktop=PASS
+          publication.android=PASS
+          publication.wasm=PASS
+          publication.metadata_targets=PASS
+          kotlin.version=2.4.20
+          compose.version=1.12.1
+          production.renderer.default=NATIVE_CANVAS
+          graphite.production=DISABLED
+          graphite.readiness=SEPARATE_EXPERIMENTAL_GATE
+          public.api.change=NONE
+          workflow.sha=${GITHUB_SHA}
+          workflow.run_id=${GITHUB_RUN_ID}
+          EOF
+
+          cat evidence/readiness/3.2.3-rc-readiness.txt
+
+      - name: Upload 3.2.3 release-candidate readiness evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-readiness-3.2.3-${{ github.sha }}
+          path: evidence/readiness/3.2.3-rc-readiness.txt
+          if-no-files-found: error
+          retention-days: 90
+

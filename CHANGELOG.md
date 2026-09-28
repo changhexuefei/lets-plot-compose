@@ -18,12 +18,15 @@ Current development baseline:
 - WasmJS hyperlink navigation using the browser window.
 - Android hyperlink navigation through the Compose URI handler, with lifecycle-safe callback cleanup.
 - Dedicated multiplatform UI-parity and interaction-contract CI evidence.
+- Published-Maven standalone consumer smoke for Android and WasmJS, including Android release AAR and Wasm production bundle verification.
+- 3.2.3 release-candidate readiness gate covering Desktop/Android/Wasm consumer evidence and publication inventory.
 
 ### Changed
 
 - Pointer interaction semantics are now locked to one common cross-platform contract for drag, move, wheel-axis selection, and Ctrl/Alt/Shift/Meta propagation.
 - FigureModel dispatcher ownership and toolbar lifecycle are now keyed to the active figure model to prevent stale cleanup from detaching newer bindings.
 - Computation messages are dispatched once per active raw plot spec and are re-enabled when the plot spec changes.
+- CI publication bundles now include the Compose Android and WasmJS target artifacts required by root multiplatform module metadata.
 
 ### Fixed
 

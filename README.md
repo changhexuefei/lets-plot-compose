@@ -42,6 +42,17 @@ The current cross-platform regression baseline also verifies the following behav
 
 The toolbar implementation and interaction contract are shared from common code where practical, while platform adapters retain only the platform-specific event and navigation integration. The compatibility CI compiles all three targets and emits dedicated regression evidence for these contracts.
 
+### Release-Candidate Evidence
+
+The 3.2.3 stabilization line now validates the **published Maven boundary**, not only in-repository target compilation:
+
+- Desktop: standalone Windows/JDK 21 consumer plus the 9-screenshot regression baseline.
+- Android: standalone Kotlin Multiplatform consumer resolving the published Android variant and assembling a release AAR.
+- WasmJS: the same standalone consumer resolving the published Wasm variant and producing the production webpack JS/Wasm bundle.
+- Publication inventory: the root `lets-plot-compose` Gradle module metadata must reference the Desktop, Android, and Wasm target publications.
+
+The final `release-candidate-readiness` CI gate aggregates these checks into a 90-day evidence artifact. See [3.2.3 RC readiness](docs/release/3.2.3-rc-readiness.md) for the full contract.
+
 ### Desktop Graphite Readiness
 
 The production Desktop renderer remains **Native Canvas**.
