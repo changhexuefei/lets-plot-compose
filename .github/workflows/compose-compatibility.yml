@@ -518,22 +518,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          wasm_output_dir=""
-          while IFS= read -r candidate_index; do
-            candidate_dir="$(dirname "$candidate_index")"
-            candidate_js="$candidate_dir/letsPlotConsumerSmoke.js"
-            candidate_wasm="$(find "$candidate_dir" -maxdepth 1 -name '*.wasm' -type f -print -quit)"
-            if [[ -s "$candidate_js" && -n "$candidate_wasm" && -s "$candidate_wasm" ]]; then
-              wasm_output_dir="$candidate_dir"
-              break
-            fi
-          done < <(find consumer-smoke-mpp/build -name 'index.html' -type f -print)
-
-          test -n "$wasm_output_dir"
-          wasm_js="$wasm_output_dir/letsPlotConsumerSmoke.js"
+          wasm_js="$(find consumer-smoke-mpp/build -name 'letsPlotConsumerSmoke.js' -type f -print -quit)"
+          test -n "$wasm_js"
           test -s "$wasm_js"
+
+          wasm_output_dir="$(dirname "$wasm_js")"
+          wasm_binary="$(find "$wasm_output_dir" -maxdepth 1 -name '*.wasm' -type f -print -quit)"
+          test -n "$wasm_binary"
+          test -s "$wasm_binary"
+
+          smoke_index="consumer-smoke-mpp/src/wasmJsMain/resources/index.html"
+          test -s "$smoke_index"
+          cp "$smoke_index" "$wasm_output_dir/index.html"
           test -s "$wasm_output_dir/index.html"
-          echo "Serving Wasm distribution: $wasm_output_dir"
+
+          echo "Serving Wasm production webpack output: $wasm_output_dir"
+          echo "Wasm JS: $wasm_js"
+          echo "Wasm binary: $wasm_binary"
 
           chrome="$(
             command -v google-chrome ||
@@ -574,23 +575,14 @@ jobs:
           set -euo pipefail
 
           android_aar="$(find compose/consumer-smoke-mpp/build/outputs/aar -name '*.aar' -type f -print -quit)"
-          wasm_output_dir=""
-          while IFS= read -r candidate_index; do
-            candidate_dir="$(dirname "$candidate_index")"
-            candidate_js="$candidate_dir/letsPlotConsumerSmoke.js"
-            candidate_wasm="$(find "$candidate_dir" -maxdepth 1 -name '*.wasm' -type f -print -quit)"
-            if [[ -s "$candidate_js" && -n "$candidate_wasm" && -s "$candidate_wasm" ]]; then
-              wasm_output_dir="$candidate_dir"
-              break
-            fi
-          done < <(find compose/consumer-smoke-mpp/build -name 'index.html' -type f -print)
+          wasm_js="$(find compose/consumer-smoke-mpp/build -name 'letsPlotConsumerSmoke.js' -type f -print -quit)"
 
           test -n "$android_aar"
           test -s "$android_aar"
-          test -n "$wasm_output_dir"
-          wasm_js="$wasm_output_dir/letsPlotConsumerSmoke.js"
+          test -n "$wasm_js"
           test -s "$wasm_js"
 
+          wasm_output_dir="$(dirname "$wasm_js")"
           wasm_binary="$(find "$wasm_output_dir" -maxdepth 1 -name '*.wasm' -type f -print -quit)"
           wasm_browser_evidence="compose/consumer-smoke-mpp/build/evidence/wasm-browser/wasm-browser-interaction-smoke.txt"
 
