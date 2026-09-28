@@ -21,6 +21,7 @@ Current development baseline:
 - Published-Maven standalone consumer smoke for Android and WasmJS, including Android release AAR and Wasm production bundle verification.
 - 3.2.3 release-candidate readiness gate covering Desktop/Android/Wasm consumer evidence and publication inventory.
 - Release dependency preflight that blocks a final 3.2.3 version from depending on SNAPSHOT Lets-Plot artifacts, verifies non-SNAPSHOT upstream artifacts against Maven Central, and records the current pre-release state.
+- Signed 3.2.3 release-bundle rehearsal using an ephemeral CI key and the known released 4.11.0/4.15.0 upstream pair, without external publication.
 
 ### Changed
 
