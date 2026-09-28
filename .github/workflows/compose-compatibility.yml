@@ -15,7 +15,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  compatibility-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_full: ${{ steps.scope.outputs.run_full }}
+      reason: ${{ steps.scope.outputs.reason }}
+
+    steps:
+      - name: Checkout scope inputs
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate compatibility scope scripts
+        shell: bash
+        run: |
+          bash -n .github/scripts/compatibility-scope.sh
+          bash -n .github/scripts/test-compatibility-scope.sh
+          bash .github/scripts/test-compatibility-scope.sh
+
+      - name: Decide whether full compatibility CI is required
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          changed_file="${RUNNER_TEMP}/compatibility-changed-files.txt"
+          : > "$changed_file"
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA" > "$changed_file"
+          elif [[ "$EVENT_NAME" == "push" && -n "${PUSH_BEFORE_SHA:-}" && "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            git diff --name-only "$PUSH_BEFORE_SHA" "$PUSH_HEAD_SHA" > "$changed_file"
+          fi
+
+          echo "Changed files:"
+          cat "$changed_file" || true
+
+          scope_output="$(bash .github/scripts/compatibility-scope.sh "$changed_file")"
+          printf '%s\n' "$scope_output"
+
+          run_full="$(printf '%s\n' "$scope_output" | sed -n 's/^run_full=//p')"
+          reason="$(printf '%s\n' "$scope_output" | sed -n 's/^reason=//p')"
+
+          [[ "$run_full" == "true" || "$run_full" == "false" ]]
+          [[ -n "$reason" ]]
+
+          echo "run_full=$run_full" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+
+      - name: Publish compatibility scope summary
+        shell: bash
+        run: |
+          {
+            echo '## Compatibility CI scope'
+            echo
+            echo "- full matrix required: `${{ steps.scope.outputs.run_full }}`"
+            echo "- reason: `${{ steps.scope.outputs.reason }}`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   compose-compatibility:
+    needs: compatibility-scope
+    if: needs.compatibility-scope.outputs.run_full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -277,6 +345,8 @@ jobs:
           retention-days: 3
 
   core-jvm-bundle:
+    needs: compatibility-scope
+    if: needs.compatibility-scope.outputs.run_full == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     env:
