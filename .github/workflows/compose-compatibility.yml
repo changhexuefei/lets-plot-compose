@@ -456,6 +456,7 @@ jobs:
           path: compose
           sparse-checkout: |
             consumer-smoke-mpp
+            .github/scripts/wasm-consumer-browser-smoke.cjs
             gradlew
             gradlew.bat
             gradle/wrapper
@@ -511,6 +512,50 @@ jobs:
           --no-daemon
           --stacktrace
 
+      - name: Run Wasm browser interaction smoke
+        working-directory: compose
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          wasm_js="$(find consumer-smoke-mpp/build -name 'letsPlotConsumerSmoke.js' -type f -print -quit)"
+          test -n "$wasm_js"
+          test -s "$wasm_js"
+          wasm_output_dir="$(dirname "$wasm_js")"
+
+          chrome="$(
+            command -v google-chrome ||
+            command -v google-chrome-stable ||
+            command -v chromium ||
+            command -v chromium-browser ||
+            true
+          )"
+          test -n "$chrome"
+          echo "Using browser: $chrome"
+
+          node_root="$RUNNER_TEMP/wasm-browser-smoke-node"
+          rm -rf "$node_root"
+          mkdir -p "$node_root"
+          cat > "$node_root/package.json" <<'EOF'
+          {"private":true}
+          EOF
+          npm install             --prefix "$node_root"             --no-save             --no-package-lock             playwright-core@1.55.0             pngjs@7.0.0
+
+          evidence_dir="$GITHUB_WORKSPACE/compose/consumer-smoke-mpp/build/evidence/wasm-browser"
+          mkdir -p "$evidence_dir"
+          server_log="$evidence_dir/http-server.log"
+
+          python3 -m http.server 4173             --bind 127.0.0.1             --directory "$wasm_output_dir"             >"$server_log" 2>&1 &
+          server_pid=$!
+
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          NODE_PATH="$node_root/node_modules"           WASM_SMOKE_CHROME="$chrome"           WASM_SMOKE_URL="http://127.0.0.1:4173/"           WASM_SMOKE_OUTPUT_DIR="$evidence_dir"             node .github/scripts/wasm-consumer-browser-smoke.cjs
+
       - name: Verify multiplatform consumer outputs
         shell: bash
         run: |
@@ -526,9 +571,18 @@ jobs:
 
           wasm_output_dir="$(dirname "$wasm_js")"
           wasm_binary="$(find "$wasm_output_dir" -maxdepth 1 -name '*.wasm' -type f -print -quit)"
+          wasm_browser_evidence="compose/consumer-smoke-mpp/build/evidence/wasm-browser/wasm-browser-interaction-smoke.txt"
 
           test -n "$wasm_binary"
           test -s "$wasm_binary"
+          test -s "$wasm_browser_evidence"
+          grep -Fqx 'result=WASM_BROWSER_INTERACTION_SMOKE_PASS' "$wasm_browser_evidence"
+          grep -Fqx 'render=PASS' "$wasm_browser_evidence"
+          grep -Fqx 'tooltip=PASS' "$wasm_browser_evidence"
+          grep -Fqx 'wheel_zoom=PASS' "$wasm_browser_evidence"
+          grep -Fqx 'drag_pan=PASS' "$wasm_browser_evidence"
+          grep -Fqx 'figure_model.toolbarless_feedback=RUNTIME_PASS' "$wasm_browser_evidence"
+          grep -Fqx 'production.renderer.default=NATIVE_CANVAS' "$wasm_browser_evidence"
 
           echo "Android AAR: $android_aar"
           echo "Wasm JS: $wasm_js"
@@ -546,6 +600,12 @@ jobs:
           android.variant=ANDROID_RELEASE
           wasm.production_bundle=PASS
           wasm.binary=PASS
+          wasm.browser_runtime=PASS
+          wasm.browser_render=PASS
+          wasm.browser_tooltip=PASS
+          wasm.browser_wheel_zoom=PASS
+          wasm.browser_drag_pan=PASS
+          wasm.toolbarless_feedback=RUNTIME_PASS
           compose.version=1.12.1
           kotlin.version=2.4.20
           lets_plot_compose.version=3.2.3-SNAPSHOT
@@ -562,7 +622,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: multiplatform-consumer-smoke-${{ github.sha }}
-          path: compose/consumer-smoke-mpp/build/evidence/multiplatform-consumer-smoke.txt
+          path: compose/consumer-smoke-mpp/build/evidence
           if-no-files-found: error
           retention-days: 90
 
@@ -3872,6 +3932,12 @@ jobs:
           assert_line 'android.release_aar=PASS' "$multiplatform_smoke"
           assert_line 'wasm.production_bundle=PASS' "$multiplatform_smoke"
           assert_line 'wasm.binary=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.browser_runtime=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.browser_render=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.browser_tooltip=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.browser_wheel_zoom=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.browser_drag_pan=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.toolbarless_feedback=RUNTIME_PASS' "$multiplatform_smoke"
           assert_line 'public.api.defaults_compile=PASS' "$multiplatform_smoke"
           assert_line 'public.api.change=SOURCE_COMPATIBLE_DEFAULTS' "$multiplatform_smoke"
 
@@ -3909,6 +3975,9 @@ jobs:
           wasm.consumer=PASS
           wasm.production_bundle=PASS
           wasm.binary=PASS
+          wasm.browser_runtime=PASS
+          wasm.browser_interactions=RENDER_TOOLTIP_ZOOM_PAN_PASS
+          wasm.toolbarless_feedback=RUNTIME_PASS
           publication.root=PASS
           publication.desktop=PASS
           publication.android=PASS
