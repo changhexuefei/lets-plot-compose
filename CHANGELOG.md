@@ -22,7 +22,7 @@ Current development baseline:
 - 3.2.3 release-candidate readiness gate covering Desktop/Android/Wasm consumer evidence and publication inventory.
 - Release dependency preflight that blocks a final 3.2.3 version from depending on SNAPSHOT Lets-Plot artifacts, verifies non-SNAPSHOT upstream artifacts against Maven Central, and records the current pre-release state.
 - Signed 3.2.3 release-bundle rehearsal using an ephemeral CI key and the known released 4.11.0/4.15.0 upstream pair, without external publication.
-- Full release-bundle integrity coverage requiring every Maven payload to have verified SHA-256, SHA-512, and detached GPG signature evidence, plus a retained hash inventory.
+- Full release-bundle integrity coverage requiring every Maven payload and its detached GPG signature to have verified SHA-256/SHA-512 checksum evidence, plus a retained hash inventory.
 
 ### Changed
 
