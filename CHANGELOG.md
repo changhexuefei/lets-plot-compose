@@ -26,6 +26,7 @@ Current development baseline:
 - Lightweight 3.2.3 upstream-release readiness workflow that checks the target Lets-Plot 4.11.1 and Kotlin API 4.15.1 artifacts on Maven Central without running the full compatibility matrix.
 - Deterministic upstream-readiness contract test covering both the available and waiting state transitions with a temporary local Maven repository.
 - Compatibility CI scope gate that skips the heavy matrix for readiness-only metadata changes while preserving full CI for source, dependency-version, and compatibility-workflow changes.
+- Live readiness-only workflow acceptance proving the scope gate skips both heavy roots and the downstream compatibility/release graph on GitHub Actions.
 
 ### Changed
 
