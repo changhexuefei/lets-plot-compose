@@ -3956,7 +3956,7 @@ jobs:
           LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}/consumer-bundle/kotlin
           LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}/consumer-bundle/compose
         with:
-          api-level: 35
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
