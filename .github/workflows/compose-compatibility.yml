@@ -3899,12 +3899,144 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  android-emulator-consumer-smoke:
+    needs:
+      - compose-compatibility
+      - core-jvm-bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout standalone multiplatform consumer only
+        uses: actions/checkout@v4
+        with:
+          path: compose
+          sparse-checkout: |
+            consumer-smoke-mpp
+            gradlew
+            gradlew.bat
+            gradle/wrapper
+          sparse-checkout-cone-mode: false
+
+      - name: Download frontend Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-frontend-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Download Core Maven bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lets-plot-core-maven-${{ github.sha }}
+          path: consumer-bundle
+
+      - name: Set up JDK 17 consumer runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android consumer Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Enable KVM access
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run published Android consumer on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          LETS_PLOT_CORE_REPO: ${{ github.workspace }}/consumer-bundle/core
+          LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}/consumer-bundle/kotlin
+          LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}/consumer-bundle/compose
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -no-snapshot
+            -noaudio
+            -no-boot-anim
+          script: |
+            set -euo pipefail
+            cd compose
+
+            ./gradlew \
+              -p consumer-smoke-mpp \
+              connectedDebugAndroidTest \
+              --no-daemon \
+              --stacktrace
+
+            evidence_dir="$GITHUB_WORKSPACE/compose/consumer-smoke-mpp/build/evidence/android-emulator"
+            mkdir -p "$evidence_dir"
+
+            package_name='org.jetbrains.letsplot.smoke.mpp'
+            remote_dir='files/android-consumer-smoke'
+
+            adb exec-out run-as "$package_name" \
+              cat "$remote_dir/01-render.png" > "$evidence_dir/01-render.png"
+            adb exec-out run-as "$package_name" \
+              cat "$remote_dir/02-drag-pan.png" > "$evidence_dir/02-drag-pan.png"
+            adb exec-out run-as "$package_name" \
+              cat "$remote_dir/android-emulator-consumer-smoke.txt" \
+              > "$evidence_dir/android-emulator-consumer-smoke.txt"
+
+            adb exec-out screencap -p > "$evidence_dir/emulator-final.png"
+            adb logcat -d > "$evidence_dir/logcat.txt"
+
+            test -s "$evidence_dir/01-render.png"
+            test -s "$evidence_dir/02-drag-pan.png"
+            test -s "$evidence_dir/android-emulator-consumer-smoke.txt"
+
+      - name: Verify Android emulator consumer evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          evidence='compose/consumer-smoke-mpp/build/evidence/android-emulator/android-emulator-consumer-smoke.txt'
+          test -s "$evidence"
+
+          grep -Fqx 'result=ANDROID_EMULATOR_CONSUMER_SMOKE_PASS' "$evidence"
+          grep -Fqx 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$evidence"
+          grep -Fqx 'runtime=ANDROID_EMULATOR' "$evidence"
+          grep -Fqx 'render=PASS' "$evidence"
+          grep -Fqx 'drag_pan=PASS' "$evidence"
+          grep -Fqx 'figure_model.toolbarless_feedback=RUNTIME_PASS' "$evidence"
+          grep -Fqx 'production.renderer.default=NATIVE_CANVAS' "$evidence"
+          grep -Fqx 'graphite.production=DISABLED' "$evidence"
+
+          test -n "$(find compose/consumer-smoke-mpp/build -path '*androidTest-results*' -type f -print -quit)"
+
+          cat "$evidence"
+
+      - name: Upload Android emulator consumer evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-consumer-smoke-${{ github.sha }}
+          path: |
+            compose/consumer-smoke-mpp/build/evidence/android-emulator
+            compose/consumer-smoke-mpp/build/outputs/androidTest-results
+            compose/consumer-smoke-mpp/build/reports/androidTests
+          if-no-files-found: error
+          retention-days: 90
+
   release-candidate-readiness:
     needs:
       - compose-compatibility
       - core-jvm-bundle
       - windows-consumer-smoke
       - multiplatform-consumer-smoke
+      - android-emulator-consumer-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -3921,6 +4053,12 @@ jobs:
           name: multiplatform-consumer-smoke-${{ github.sha }}
           path: evidence/multiplatform
 
+      - name: Download Android emulator published-consumer evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: android-emulator-consumer-smoke-${{ github.sha }}
+          path: evidence/android-emulator
+
       - name: Download frontend Maven publication bundle
         uses: actions/download-artifact@v4
         with:
@@ -3935,6 +4073,7 @@ jobs:
           desktop_manifest="$(find evidence/desktop -name 'baseline-manifest.txt' -type f -print -quit)"
           desktop_smoke="$(find evidence/desktop -name 'smoke-summary.txt' -type f -print -quit)"
           multiplatform_smoke="$(find evidence/multiplatform -name 'multiplatform-consumer-smoke.txt' -type f -print -quit)"
+          android_emulator_smoke="$(find evidence/android-emulator -name 'android-emulator-consumer-smoke.txt' -type f -print -quit)"
 
           test -n "$desktop_manifest"
           test -s "$desktop_manifest"
@@ -3942,10 +4081,13 @@ jobs:
           test -s "$desktop_smoke"
           test -n "$multiplatform_smoke"
           test -s "$multiplatform_smoke"
+          test -n "$android_emulator_smoke"
+          test -s "$android_emulator_smoke"
 
           echo "Desktop baseline manifest: $desktop_manifest"
           echo "Desktop smoke summary: $desktop_smoke"
           echo "Multiplatform smoke summary: $multiplatform_smoke"
+          echo "Android emulator smoke summary: $android_emulator_smoke"
 
           # Windows evidence is written by PowerShell and therefore uses CRLF.
           # Normalize line endings before exact contract checks so the Linux
@@ -3974,6 +4116,14 @@ jobs:
           assert_line 'wasm.toolbarless_feedback=RUNTIME_PASS' "$multiplatform_smoke"
           assert_line 'public.api.defaults_compile=PASS' "$multiplatform_smoke"
           assert_line 'public.api.change=SOURCE_COMPATIBLE_DEFAULTS' "$multiplatform_smoke"
+
+          assert_line 'result=ANDROID_EMULATOR_CONSUMER_SMOKE_PASS' "$android_emulator_smoke"
+          assert_line 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$android_emulator_smoke"
+          assert_line 'runtime=ANDROID_EMULATOR' "$android_emulator_smoke"
+          assert_line 'render=PASS' "$android_emulator_smoke"
+          assert_line 'drag_pan=PASS' "$android_emulator_smoke"
+          assert_line 'figure_model.toolbarless_feedback=RUNTIME_PASS' "$android_emulator_smoke"
+          assert_line 'production.renderer.default=NATIVE_CANVAS' "$android_emulator_smoke"
 
           compose_repo='evidence/frontend/compose'
           root_dir="$(find "$compose_repo" -type d -path '*/lets-plot-compose/3.2.3-SNAPSHOT' -print -quit)"
@@ -4006,6 +4156,10 @@ jobs:
           desktop.required_screenshots=9
           android.consumer=PASS
           android.release_aar=PASS
+          android.emulator_runtime=PASS
+          android.emulator_render=PASS
+          android.emulator_drag_pan=PASS
+          android.toolbarless_feedback=RUNTIME_PASS
           wasm.consumer=PASS
           wasm.production_bundle=PASS
           wasm.binary=PASS
