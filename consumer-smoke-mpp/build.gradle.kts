@@ -37,7 +37,7 @@ kotlin {
 
         val androidInstrumentedTest by getting {
             dependencies {
-                implementation(compose.uiTestJUnit4)
+                implementation("org.jetbrains.compose.ui:ui-test-junit4:1.12.1")
                 implementation("androidx.activity:activity-compose:1.10.1")
                 implementation("androidx.test:core-ktx:1.6.1")
                 implementation("androidx.test.ext:junit-ktx:1.2.1")
