@@ -18,6 +18,7 @@ plugins {
 }
 
 val androidComposeBom = extra["androidx.compose.bom"] as String
+val slf4jVersion = extra["slf4j.version"] as String
 val letsPlotVersion = extra["letsPlot.version"] as String
 val letsPlotKotlinVersion = extra["letsPlotKotlin.version"] as String
 val kotlinxCoroutinesVersion = extra["kotlinx.coroutines.version"] as String
@@ -144,6 +145,9 @@ kotlin {
                 implementation(project.dependencies.platform("androidx.compose:compose-bom:$androidComposeBom"))
                 implementation("androidx.compose.ui:ui")
                 implementation("androidx.compose.ui:ui-graphics")
+                // kotlin-logging uses LoggerFactory on Android. Publish its API with the
+                // Android variant so a published consumer does not fail at class loading.
+                api("org.slf4j:slf4j-api:$slf4jVersion")
                 api(project(":platf-android"))
             }
         }
