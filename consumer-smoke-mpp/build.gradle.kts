@@ -49,10 +49,12 @@ kotlin {
 
 android {
     namespace = "org.jetbrains.letsplot.smoke.mpp"
+    // Compose 1.12.1 Android AAR metadata requires API 37.
     compileSdk = 37
 
     defaultConfig {
         minSdk = 24
+        testApplicationId = "org.jetbrains.letsplot.smoke.mpp.test"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

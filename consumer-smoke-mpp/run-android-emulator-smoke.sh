@@ -4,7 +4,7 @@ set -euo pipefail
 # Resolve the checkout from this file, independently of the action's working directory.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-./gradlew \
+./consumer-smoke-mpp/gradlew \
   -p consumer-smoke-mpp \
   connectedDebugAndroidTest \
   --no-daemon \
@@ -13,9 +13,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 evidence_dir="$PWD/consumer-smoke-mpp/build/evidence/android-emulator"
 mkdir -p "$evidence_dir"
 
-# The Android application id is derived from the consumer namespace.
-# The smoke manifest does not define a separate application id/package.
-package_name='org.jetbrains.letsplot.smoke.mpp'
+# This library runs in the instrumentation APK, whose ID is set in build.gradle.kts.
+package_name='org.jetbrains.letsplot.smoke.mpp.test'
 remote_dir='files/android-consumer-smoke'
 
 adb exec-out run-as "$package_name" \

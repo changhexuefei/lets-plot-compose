@@ -10,7 +10,7 @@ pluginManagement {
         kotlin("multiplatform") version "2.4.20"
         kotlin("plugin.compose") version "2.4.20"
         id("org.jetbrains.compose") version "1.12.1"
-        id("com.android.library") version "9.1.0"
+        id("com.android.library") version "9.1.1"
     }
 }
 
