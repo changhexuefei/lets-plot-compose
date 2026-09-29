@@ -31,6 +31,7 @@ Current development baseline:
 - Cross-platform toolbarless interaction feedback ownership so external FigureModel pan/zoom state updates consistently on Desktop, Android, and WasmJS.
 - Source-compatible PlotPanel/PlotPanelRaw defaults for modifier, aspect-ratio, and computation-message callback ergonomics, verified by standalone published consumers.
 - Published-Maven WasmJS browser runtime smoke covering render, tooltip, toolbarless wheel zoom, and drag pan with retained screenshots.
+- Published-Maven Android emulator runtime smoke covering render and toolbarless touch drag-pan, promoted into the 3.2.3 release-candidate gate.
 
 ### Changed
 
