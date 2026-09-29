@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -57,8 +58,8 @@ class AndroidConsumerRuntimeSmokeTest {
 
         plot.performTouchInput {
             swipe(
-                start = center.copy(x = center.x + 160f),
-                end = center.copy(x = center.x - 160f),
+                start = Offset(center.x + 160f, center.y),
+                end = Offset(center.x - 160f, center.y),
                 durationMillis = 700
             )
         }
