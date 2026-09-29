@@ -6,6 +6,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import org.jetbrains.letsPlot.compose.PlotFigureModel
 import org.jetbrains.letsPlot.compose.PlotPanel
 import org.jetbrains.letsPlot.compose.PlotPanelRaw
@@ -42,7 +43,9 @@ fun ConsumerPlot() {
     PlotPanel(
         figure = figure,
         figureModel = figureModel,
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("consumer-plot-root")
     )
 }
 
