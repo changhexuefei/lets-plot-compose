@@ -77,7 +77,7 @@ class AndroidConsumerRuntimeSmokeTest {
 
         val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
         val evidenceDir = File(
-            requireNotNull(targetContext.getExternalFilesDir(null)),
+            targetContext.filesDir,
             "android-consumer-smoke"
         ).apply {
             deleteRecursively()
