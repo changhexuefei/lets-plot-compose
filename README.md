@@ -57,7 +57,7 @@ The 3.2.3 stabilization line now validates the **published Maven boundary**, not
 
 - Desktop: standalone Windows/JDK 21 consumer plus the 9-screenshot regression baseline.
 - Android: standalone Kotlin Multiplatform consumer resolving the published Android variant and assembling a release AAR.
-- Android: the standalone KMP consumer resolves the published Android variant, assembles the release AAR, and runs on an API 35 emulator to validate non-blank render plus touch drag-pan with screenshot evidence.
+- Android: the standalone KMP consumer resolves the published Android variant, assembles the release AAR, and runs on an API 34 emulator to validate non-blank render plus touch drag-pan with screenshot evidence.
 - WasmJS: the same standalone consumer resolving the published Wasm variant and producing the production webpack JS/Wasm bundle.
   The CI then serves that exact bundle in headless Chromium and validates render, tooltip, wheel zoom, and drag pan with screenshot evidence.
 - Publication inventory: the root `lets-plot-compose` Gradle module metadata must reference the Desktop, Android, and Wasm target publications.
