@@ -4,9 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lets-Plot Compose Consumer Smoke</title>
+    <style>
+        html, body, #ComposeTarget {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
 </head>
 <body>
-<div id="ComposeTarget"></div>
+<div id="ComposeTarget" data-smoke-root="wasm-consumer"></div>
 <script src="letsPlotConsumerSmoke.js"></script>
 </body>
 </html>
