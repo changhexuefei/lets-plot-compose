@@ -13,7 +13,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 evidence_dir="$PWD/consumer-smoke-mpp/build/evidence/android-emulator"
 mkdir -p "$evidence_dir"
 
-package_name='org.jetbrains.letsplot.smoke.mpp.test'
+# The Android application id is derived from the consumer namespace.
+# The smoke manifest does not define a separate application id/package.
+package_name='org.jetbrains.letsplot.smoke.mpp'
 remote_dir='files/android-consumer-smoke'
 
 adb exec-out run-as "$package_name" \
