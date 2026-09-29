@@ -34,6 +34,16 @@ kotlin {
                 implementation("org.jetbrains.lets-plot:lets-plot-compose:3.2.3-SNAPSHOT")
             }
         }
+
+        val androidInstrumentedTest by getting {
+            dependencies {
+                implementation(compose.uiTestJUnit4)
+                implementation("androidx.activity:activity-compose:1.10.1")
+                implementation("androidx.test:core-ktx:1.6.1")
+                implementation("androidx.test.ext:junit-ktx:1.2.1")
+                implementation("androidx.test:runner:1.6.2")
+            }
+        }
     }
 }
 
@@ -43,6 +53,13 @@ android {
 
     defaultConfig {
         minSdk = 24
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    sourceSets["androidTest"].manifest.srcFile("src/androidInstrumentedTest/AndroidManifest.xml")
+
+    testOptions {
+        animationsDisabled = true
     }
 
     compileOptions {
