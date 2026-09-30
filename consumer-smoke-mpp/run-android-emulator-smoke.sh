@@ -17,6 +17,7 @@ remote_dir='/data/local/tmp/android-consumer-smoke'
 
 adb exec-out cat "$remote_dir/01-render.png" > "$evidence_dir/01-render.png"
 adb exec-out cat "$remote_dir/02-drag-pan.png" > "$evidence_dir/02-drag-pan.png"
+adb exec-out cat "$remote_dir/03-tooltip.png" > "$evidence_dir/03-tooltip.png"
 adb exec-out cat "$remote_dir/android-emulator-consumer-smoke.txt" \
   > "$evidence_dir/android-emulator-consumer-smoke.txt"
 
@@ -25,4 +26,5 @@ adb logcat -d > "$evidence_dir/logcat.txt"
 
 test -s "$evidence_dir/01-render.png"
 test -s "$evidence_dir/02-drag-pan.png"
+test -s "$evidence_dir/03-tooltip.png"
 test -s "$evidence_dir/android-emulator-consumer-smoke.txt"
