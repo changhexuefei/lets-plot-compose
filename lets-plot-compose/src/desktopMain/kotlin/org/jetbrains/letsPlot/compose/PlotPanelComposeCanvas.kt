@@ -27,7 +27,6 @@ import org.jetbrains.letsPlot.commons.logging.PortableLogging
 import org.jetbrains.letsPlot.commons.registration.Registration
 import org.jetbrains.letsPlot.compose.canvas.SkiaCanvasPeer
 import org.jetbrains.letsPlot.compose.canvas.SkiaFontManager
-import org.jetbrains.letsPlot.core.interact.event.ToolEventDispatcher
 import org.jetbrains.letsPlot.core.spec.Option.Meta.Kind.GG_TOOLBAR
 import org.jetbrains.letsPlot.core.spec.config.PlotConfig
 import org.jetbrains.letsPlot.core.spec.front.SpecOverrideUtil.applySpecOverride
@@ -112,10 +111,8 @@ fun PlotPanelComposeCanvas(
     val canvasRegistration = remember(plotDrawable, skiaCanvasPeer) {
         plotDrawable.mapToCanvas(skiaCanvasPeer)
     }
-    // Tracks only the dispatcher installed by this PlotPanel instance.
-    // Do not use Compose state here: ownership changes should not trigger recomposition.
-    val ownedToolEventDispatcher = remember(plotDrawable) {
-        arrayOfNulls<ToolEventDispatcher>(1)
+    val dispatcherOwner = remember(plotDrawable, figureModel) {
+        PlotFigureModelDispatcherOwner(figureModel)
     }
 
     // Background
@@ -139,18 +136,15 @@ fun PlotPanelComposeCanvas(
         figureModel,
         repaintRegistration,
         canvasRegistration,
-        defaultInteractionFeedbackOwner
+        defaultInteractionFeedbackOwner,
+        dispatcherOwner
     ) {
         plotDrawable.onHrefClick(::browseLink)
 
         onDispose {
-            // Clear only the dispatcher owned by this PlotPanel instance. A replacement
-            // composition may already have installed a newer dispatcher in the same model.
-            val dispatcher = ownedToolEventDispatcher[0]
-            if (dispatcher != null && figureModel.toolEventDispatcher === dispatcher) {
-                figureModel.toolEventDispatcher = null
-            }
-            ownedToolEventDispatcher[0] = null
+            // Release only the dispatcher owned by this composition. A replacement
+            // composition may already have rebound the same FigureModel to a newer dispatcher.
+            dispatcherOwner.release()
 
             plotDrawable.onHrefClick(handler = {})
 
@@ -210,11 +204,9 @@ fun PlotPanelComposeCanvas(
                                 }
                             }
 
-                            // Connect the figure model to the plot component and remember
-                            // exactly which dispatcher this composition owns.
-                            val dispatcher = plotDrawable.toolEventDispatcher
-                            figureModel.toolEventDispatcher = dispatcher
-                            ownedToolEventDispatcher[0] = dispatcher
+                            // Connect the figure model to the plot component through the
+                            // same ownership helper used by Android and Wasm.
+                            dispatcherOwner.bind(plotDrawable.toolEventDispatcher)
 
                             val plotWidth = plotDrawable.size.x
                             val plotHeight = plotDrawable.size.y

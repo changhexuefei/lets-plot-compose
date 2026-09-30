@@ -235,10 +235,17 @@ jobs:
           android_pointer="compose/lets-plot-compose/src/androidMain/kotlin/org/jetbrains/letsPlot/compose/PlotPanelComposeCanvas.kt"
           desktop_pointer="compose/lets-plot-compose/src/desktopMain/kotlin/org/jetbrains/letsPlot/compose/ComposeMouseEventMapper.kt"
           wasm_pointer="compose/lets-plot-compose/src/wasmJsMain/kotlin/org/jetbrains/letsPlot/compose/ComposeMouseEventMapper.kt"
+          desktop_canvas="compose/lets-plot-compose/src/desktopMain/kotlin/org/jetbrains/letsPlot/compose/PlotPanelComposeCanvas.kt"
+          android_canvas="compose/lets-plot-compose/src/androidMain/kotlin/org/jetbrains/letsPlot/compose/PlotPanelComposeCanvas.kt"
+          wasm_canvas="compose/lets-plot-compose/src/wasmJsMain/kotlin/org/jetbrains/letsPlot/compose/PlotPanelComposeCanvas.kt"
 
           grep -Fq 'awaitPointerEvent(PointerEventPass.Initial)' "$android_pointer"
           grep -Fq 'awaitPointerEvent(PointerEventPass.Initial)' "$desktop_pointer"
           grep -Fq 'awaitPointerEvent(PointerEventPass.Initial)' "$wasm_pointer"
+
+          grep -Fq 'PlotFigureModelDispatcherOwner(figureModel)' "$desktop_canvas"
+          grep -Fq 'PlotFigureModelDispatcherOwner(figureModel)' "$android_canvas"
+          grep -Fq 'PlotFigureModelDispatcherOwner(figureModel)' "$wasm_canvas"
 
           evidence_dir="compose/lets-plot-compose/build/interaction-contract"
           mkdir -p "$evidence_dir"
@@ -259,6 +266,7 @@ jobs:
           pointer.event_pass.desktop=INITIAL
           pointer.event_pass.android=INITIAL
           pointer.event_pass.wasm=INITIAL
+          figure_model.dispatcher_owner=SHARED_ALL_COMPOSE_TARGETS
           figure_model.toolbarless_feedback=PASS
           figure_model.dispatcher_ownership=PASS
           figure_model.stale_release=SAFE
