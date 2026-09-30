@@ -4009,6 +4009,8 @@ jobs:
           grep -Fqx 'render=PASS' "$evidence"
           grep -Fqx 'drag_pan=PASS' "$evidence"
           grep -Fqx 'tooltip=PASS' "$evidence"
+          grep -Fqx 'figure_model.programmatic_override=PASS' "$evidence"
+          grep -Fqx 'figure_model.programmatic_rollback=PASS' "$evidence"
           grep -Fqx 'figure_model.toolbarless_feedback=RUNTIME_PASS' "$evidence"
           grep -Fqx 'production.renderer.default=NATIVE_CANVAS' "$evidence"
           grep -Fqx 'graphite.production=DISABLED' "$evidence"
@@ -4122,6 +4124,8 @@ jobs:
           assert_line 'render=PASS' "$android_emulator_smoke"
           assert_line 'drag_pan=PASS' "$android_emulator_smoke"
           assert_line 'tooltip=PASS' "$android_emulator_smoke"
+          assert_line 'figure_model.programmatic_override=PASS' "$android_emulator_smoke"
+          assert_line 'figure_model.programmatic_rollback=PASS' "$android_emulator_smoke"
           assert_line 'figure_model.toolbarless_feedback=RUNTIME_PASS' "$android_emulator_smoke"
           assert_line 'production.renderer.default=NATIVE_CANVAS' "$android_emulator_smoke"
 
@@ -4160,6 +4164,8 @@ jobs:
           android.emulator_render=PASS
           android.emulator_drag_pan=PASS
           android.emulator_tooltip=PASS
+          android.figure_model_programmatic_override=PASS
+          android.figure_model_programmatic_rollback=PASS
           android.toolbarless_feedback=RUNTIME_PASS
           wasm.consumer=PASS
           wasm.production_bundle=PASS
