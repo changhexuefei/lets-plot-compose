@@ -13,17 +13,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 evidence_dir="$PWD/consumer-smoke-mpp/build/evidence/android-emulator"
 mkdir -p "$evidence_dir"
 
-# The test writes evidence through Instrumentation.targetContext, so the files
-# belong to the target APK package (the Android namespace), not testApplicationId.
-package_name='org.jetbrains.letsplot.smoke.mpp'
-remote_dir='files/android-consumer-smoke'
+remote_dir='/data/local/tmp/android-consumer-smoke'
 
-adb exec-out run-as "$package_name" \
-  cat "$remote_dir/01-render.png" > "$evidence_dir/01-render.png"
-adb exec-out run-as "$package_name" \
-  cat "$remote_dir/02-drag-pan.png" > "$evidence_dir/02-drag-pan.png"
-adb exec-out run-as "$package_name" \
-  cat "$remote_dir/android-emulator-consumer-smoke.txt" \
+adb exec-out cat "$remote_dir/01-render.png" > "$evidence_dir/01-render.png"
+adb exec-out cat "$remote_dir/02-drag-pan.png" > "$evidence_dir/02-drag-pan.png"
+adb exec-out cat "$remote_dir/android-emulator-consumer-smoke.txt" \
   > "$evidence_dir/android-emulator-consumer-smoke.txt"
 
 adb exec-out screencap -p > "$evidence_dir/emulator-final.png"
