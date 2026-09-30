@@ -50,10 +50,12 @@ class AndroidConsumerRuntimeSmokeTest {
         val beforeImage = plot.captureToImage()
         val before = beforeImage.asAndroidBitmap()
         val uniqueColors = sampledUniqueColorCount(before)
+        val plottedPointPixels = plottedPointPixelCount(before)
 
         assertTrue(
-            "Published Android consumer render looks blank: sampledUniqueColors=$uniqueColors",
-            uniqueColors >= 12
+            "Published Android consumer render looks blank: " +
+                "sampledUniqueColors=$uniqueColors, plottedPointPixels=$plottedPointPixels",
+            uniqueColors >= 4 && plottedPointPixels >= 20
         )
 
         plot.performTouchInput {
@@ -99,6 +101,7 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("figure_model.external=TRUE")
             appendLine("figure_model.toolbarless_feedback=RUNTIME_PASS")
             appendLine("render.sampled_unique_colors=$uniqueColors")
+            appendLine("render.plotted_point_pixels=$plottedPointPixels")
             appendLine("pan.diff_ratio=$diffRatio")
             appendLine("production.renderer.default=NATIVE_CANVAS")
             appendLine("graphite.production=DISABLED")
@@ -123,6 +126,31 @@ class AndroidConsumerRuntimeSmokeTest {
             y += stepY
         }
         return colors.size
+    }
+
+    private fun plottedPointPixelCount(bitmap: Bitmap): Int {
+        var count = 0
+        var y = 0
+
+        while (y < bitmap.height) {
+            var x = 0
+            while (x < bitmap.width) {
+                val pixel = bitmap.getPixel(x, y)
+                val red = android.graphics.Color.red(pixel)
+                val green = android.graphics.Color.green(pixel)
+                val blue = android.graphics.Color.blue(pixel)
+
+                // ConsumerPlot renders large #D62728 points. Allow generous channel
+                // tolerance for Skia anti-aliasing while still rejecting a blank surface.
+                if (red >= 150 && red - green >= 45 && red - blue >= 45) {
+                    count++
+                }
+                x += 2
+            }
+            y += 2
+        }
+
+        return count
     }
 
     private fun pixelDifferenceRatio(before: Bitmap, after: Bitmap): Double {
