@@ -68,8 +68,8 @@ class AndroidConsumerRuntimeSmokeTest {
         var diffRatio = 0.0
         var panAttempts = 0
 
-        repeat(3) { attempt ->
-            panAttempts = attempt + 1
+        for (attempt in 1..3) {
+            panAttempts = attempt
             plot.performTouchInput {
                 swipe(
                     start = Offset(center.x + 160f, center.y),
@@ -84,7 +84,7 @@ class AndroidConsumerRuntimeSmokeTest {
             after = plot.captureToImage().asAndroidBitmap()
             diffRatio = pixelDifferenceRatio(before, after)
             if (diffRatio > 0.002) {
-                return@repeat
+                break
             }
 
             // The emulator can deliver the first gesture before Lets-Plot's
