@@ -2,6 +2,7 @@ package smoke
 
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -17,8 +18,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import java.io.File
-import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
 import kotlin.math.abs
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -48,10 +48,6 @@ class AndroidConsumerRuntimeSmokeTest {
 
     @Test
     fun publishedConsumerRendersAndDragPans() {
-        // Anchor the test to the Activity-owned wrapper instead of PlotPanel's modifier.
-        // PlotPanel legitimately reuses its modifier across internal layers, which can
-        // expose multiple semantics nodes with the same tag and makes input injection
-        // ambiguous even though the rendered plot itself is correct.
         val plot = composeRule.onNodeWithTag("android-consumer-test-root")
         composeRule.waitForIdle()
         Thread.sleep(1_500)
@@ -87,18 +83,6 @@ class AndroidConsumerRuntimeSmokeTest {
             diffRatio > 0.002
         )
 
-        val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
-        val evidenceDir = File(
-            targetContext.filesDir,
-            "android-consumer-smoke"
-        ).apply {
-            deleteRecursively()
-            mkdirs()
-        }
-
-        savePng(before, File(evidenceDir, "01-render.png"))
-        savePng(after, File(evidenceDir, "02-drag-pan.png"))
-
         val evidence = buildString {
             appendLine("schema=1")
             appendLine("result=ANDROID_EMULATOR_CONSUMER_SMOKE_PASS")
@@ -116,9 +100,38 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("graphite.production=DISABLED")
         }
 
-        File(evidenceDir, "android-emulator-consumer-smoke.txt").writeText(evidence)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val uiAutomation = instrumentation.uiAutomation
+        val remoteDir = "/data/local/tmp/android-consumer-smoke"
+
+        uiAutomation.executeShellCommand("rm -rf $remoteDir && mkdir -p $remoteDir").close()
+        writeShellFile("$remoteDir/01-render.png", bitmapPngBytes(before))
+        writeShellFile("$remoteDir/02-drag-pan.png", bitmapPngBytes(after))
+        writeShellFile(
+            "$remoteDir/android-emulator-consumer-smoke.txt",
+            evidence.toByteArray(Charsets.UTF_8)
+        )
+
         println(evidence)
     }
+
+    private fun writeShellFile(path: String, bytes: ByteArray) {
+        val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val pipes = uiAutomation.executeShellCommandRw("cat > '$path'")
+        pipes[0].close()
+        ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use { output ->
+            output.write(bytes)
+            output.flush()
+        }
+    }
+
+    private fun bitmapPngBytes(bitmap: Bitmap): ByteArray =
+        ByteArrayOutputStream().use { stream ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
+                "Failed to encode Android smoke screenshot"
+            }
+            stream.toByteArray()
+        }
 
     private fun sampledUniqueColorCount(bitmap: Bitmap): Int {
         val colors = HashSet<Int>()
@@ -149,8 +162,6 @@ class AndroidConsumerRuntimeSmokeTest {
                 val green = android.graphics.Color.green(pixel)
                 val blue = android.graphics.Color.blue(pixel)
 
-                // ConsumerPlot renders large #D62728 points. Allow generous channel
-                // tolerance for Skia anti-aliasing while still rejecting a blank surface.
                 if (red >= 150 && red - green >= 45 && red - blue >= 45) {
                     count++
                 }
@@ -191,13 +202,5 @@ class AndroidConsumerRuntimeSmokeTest {
         }
 
         return if (total == 0L) 0.0 else changed.toDouble() / total.toDouble()
-    }
-
-    private fun savePng(bitmap: Bitmap, file: File) {
-        FileOutputStream(file).use { stream ->
-            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
-                "Failed to write " + file.absolutePath
-            }
-        }
     }
 }
