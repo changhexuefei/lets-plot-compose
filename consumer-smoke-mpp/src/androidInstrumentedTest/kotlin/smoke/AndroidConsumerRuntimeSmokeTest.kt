@@ -21,6 +21,7 @@ import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
+import java.util.ArrayDeque
 import kotlin.math.abs
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -237,27 +238,78 @@ class AndroidConsumerRuntimeSmokeTest {
     }
 
     private fun plottedPointCenter(bitmap: Bitmap): Offset {
-        val xs = mutableListOf<Int>()
-        val ys = mutableListOf<Int>()
+        val step = 2
+        val gridWidth = (bitmap.width + step - 1) / step
+        val gridHeight = (bitmap.height + step - 1) / step
+        val plotted = BooleanArray(gridWidth * gridHeight)
 
-        for (y in 0 until bitmap.height step 2) {
-            for (x in 0 until bitmap.width step 2) {
-                if (isPlottedPointPixel(bitmap.getPixel(x, y))) {
-                    xs += x
-                    ys += y
+        for (gridY in 0 until gridHeight) {
+            val y = gridY * step
+            if (y >= bitmap.height) continue
+
+            for (gridX in 0 until gridWidth) {
+                val x = gridX * step
+                if (x < bitmap.width && isPlottedPointPixel(bitmap.getPixel(x, y))) {
+                    plotted[gridY * gridWidth + gridX] = true
                 }
             }
         }
 
-        check(xs.isNotEmpty()) {
+        val visited = BooleanArray(plotted.size)
+        var bestCount = 0
+        var bestSumX = 0L
+        var bestSumY = 0L
+        val queue = ArrayDeque<Int>()
+
+        for (start in plotted.indices) {
+            if (!plotted[start] || visited[start]) continue
+
+            visited[start] = true
+            queue.addLast(start)
+            var count = 0
+            var sumX = 0L
+            var sumY = 0L
+
+            while (queue.isNotEmpty()) {
+                val index = queue.removeFirst()
+                val gridX = index % gridWidth
+                val gridY = index / gridWidth
+
+                count++
+                sumX += (gridX * step).toLong()
+                sumY += (gridY * step).toLong()
+
+                for (dy in -1..1) {
+                    for (dx in -1..1) {
+                        if (dx == 0 && dy == 0) continue
+
+                        val nextX = gridX + dx
+                        val nextY = gridY + dy
+                        if (nextX !in 0 until gridWidth || nextY !in 0 until gridHeight) continue
+
+                        val next = nextY * gridWidth + nextX
+                        if (plotted[next] && !visited[next]) {
+                            visited[next] = true
+                            queue.addLast(next)
+                        }
+                    }
+                }
+            }
+
+            if (count > bestCount) {
+                bestCount = count
+                bestSumX = sumX
+                bestSumY = sumY
+            }
+        }
+
+        check(bestCount > 0) {
             "No plotted-point pixels were available for Android tooltip interaction"
         }
 
-        xs.sort()
-        ys.sort()
         return Offset(
-            x = xs[xs.size / 2].toFloat(),
-            y = ys[ys.size / 2].toFloat()
+            x = bestSumX.toFloat() / bestCount,
+            y = bestSumY.toFloat() / bestCount
         )
     }
 
