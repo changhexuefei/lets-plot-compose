@@ -138,9 +138,15 @@ class AndroidConsumerRuntimeSmokeTest {
             "Android emulator smoke requires API 34+ for shell stderr capture"
         }
 
-        val command =
+        // UiAutomation shell commands are tokenized by the shell service rather
+        // than parsed as a compound shell expression. Wrap the sequence explicitly
+        // in /system/bin/sh -c so &&, redirection and test are interpreted correctly.
+        val compoundCommand =
             "$setup && cat > '$path' && sync && test -s '$path' && " +
                 "echo ANDROID_SMOKE_FILE_OK"
+        val command = "/system/bin/sh -c \"" +
+            compoundCommand.replace("\\", "\\\\").replace("\"", "\\\"") +
+            "\""
         val pipes = uiAutomation.executeShellCommandRwe(command)
         val stdout = ParcelFileDescriptor.AutoCloseInputStream(pipes[0])
         val stdin = ParcelFileDescriptor.AutoCloseOutputStream(pipes[1])
