@@ -627,6 +627,8 @@ jobs:
           grep -Fqx 'tooltip=PASS' "$wasm_browser_evidence"
           grep -Fqx 'wheel_zoom=PASS' "$wasm_browser_evidence"
           grep -Fqx 'drag_pan=PASS' "$wasm_browser_evidence"
+          grep -Fqx 'figure_model.programmatic_override=PASS' "$wasm_browser_evidence"
+          grep -Fqx 'figure_model.programmatic_rollback=PASS' "$wasm_browser_evidence"
           grep -Fqx 'figure_model.toolbarless_feedback=RUNTIME_PASS' "$wasm_browser_evidence"
           grep -Fqx 'production.renderer.default=NATIVE_CANVAS' "$wasm_browser_evidence"
 
@@ -651,6 +653,8 @@ jobs:
           wasm.browser_tooltip=PASS
           wasm.browser_wheel_zoom=PASS
           wasm.browser_drag_pan=PASS
+          wasm.figure_model_programmatic_override=PASS
+          wasm.figure_model_programmatic_rollback=PASS
           wasm.toolbarless_feedback=RUNTIME_PASS
           compose.version=1.12.1
           kotlin.version=2.4.20
@@ -4114,6 +4118,8 @@ jobs:
           assert_line 'wasm.browser_tooltip=PASS' "$multiplatform_smoke"
           assert_line 'wasm.browser_wheel_zoom=PASS' "$multiplatform_smoke"
           assert_line 'wasm.browser_drag_pan=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.figure_model_programmatic_override=PASS' "$multiplatform_smoke"
+          assert_line 'wasm.figure_model_programmatic_rollback=PASS' "$multiplatform_smoke"
           assert_line 'wasm.toolbarless_feedback=RUNTIME_PASS' "$multiplatform_smoke"
           assert_line 'public.api.defaults_compile=PASS' "$multiplatform_smoke"
           assert_line 'public.api.change=SOURCE_COMPATIBLE_DEFAULTS' "$multiplatform_smoke"
@@ -4172,6 +4178,8 @@ jobs:
           wasm.binary=PASS
           wasm.browser_runtime=PASS
           wasm.browser_interactions=RENDER_TOOLTIP_ZOOM_PAN_PASS
+          wasm.figure_model_programmatic_override=PASS
+          wasm.figure_model_programmatic_rollback=PASS
           wasm.toolbarless_feedback=RUNTIME_PASS
           publication.root=PASS
           publication.desktop=PASS

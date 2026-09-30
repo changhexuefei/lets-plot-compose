@@ -181,9 +181,38 @@ async function waitForServer(page) {
     const centerX = canvas.box.x + canvas.box.width / 2;
     const centerY = canvas.box.y + canvas.box.height / 2;
 
+    // The consumer owns an external PlotFigureModel and exposes two Compose
+    // controls in the top row. Establish a stable baseline through the same
+    // updateView() rebuild path used by rollback, then verify override and restore.
+    await page.mouse.click(825, 22);
+    await page.waitForTimeout(700);
+    const programmaticBaseline = await capture(page, clip, '02-programmatic-baseline.png');
+
+    await page.mouse.click(275, 22);
+    await page.waitForTimeout(700);
+    const programmaticOverride = await capture(page, clip, '03-programmatic-override.png');
+    const programmaticOverrideRatio = pixelDifferenceRatio(programmaticBaseline, programmaticOverride);
+    if (programmaticOverrideRatio <= diffThreshold) {
+      fail(
+        'Programmatic FigureModel override did not visibly change the Wasm consumer. ratio=' +
+          programmaticOverrideRatio
+      );
+    }
+
+    await page.mouse.click(825, 22);
+    await page.waitForTimeout(700);
+    const programmaticRollback = await capture(page, clip, '04-programmatic-rollback.png');
+    const programmaticRollbackRatio = pixelDifferenceRatio(programmaticBaseline, programmaticRollback);
+    if (programmaticRollbackRatio >= 0.002) {
+      fail(
+        'Programmatic FigureModel rollback did not restore the stable Wasm baseline. ratio=' +
+          programmaticRollbackRatio
+      );
+    }
+
     await page.mouse.move(4, 4);
     await page.waitForTimeout(250);
-    const tooltipBaseline = await capture(page, clip, '02-tooltip-before.png');
+    const tooltipBaseline = await capture(page, clip, '05-tooltip-before.png');
 
     let tooltip = null;
     let tooltipRatio = 0;
@@ -229,7 +258,7 @@ async function waitForServer(page) {
           tooltipRatio + ' threshold=' + diffThreshold
       );
     }
-    fs.writeFileSync(path.join(outputDir, '03-tooltip-hover.png'), tooltip);
+    fs.writeFileSync(path.join(outputDir, '06-tooltip-hover.png'), tooltip);
 
     await page.mouse.move(4, 4);
     await page.waitForTimeout(250);
@@ -238,7 +267,7 @@ async function waitForServer(page) {
     await page.mouse.move(centerX, centerY);
     await page.mouse.wheel(0, -420);
     await page.waitForTimeout(700);
-    const zoom = await capture(page, clip, '04-wheel-zoom.png');
+    const zoom = await capture(page, clip, '07-wheel-zoom.png');
     const zoomRatio = pixelDifferenceRatio(beforeZoom, zoom);
     if (zoomRatio <= diffThreshold) {
       fail('Wheel zoom did not visibly change the plot. ratio=' + zoomRatio);
@@ -253,7 +282,7 @@ async function waitForServer(page) {
     }
     await page.mouse.up();
     await page.waitForTimeout(700);
-    const pan = await capture(page, clip, '05-drag-pan.png');
+    const pan = await capture(page, clip, '08-drag-pan.png');
     const panRatio = pixelDifferenceRatio(beforePan, pan);
     if (panRatio <= diffThreshold) {
       fail('Drag pan did not visibly change the plot. ratio=' + panRatio);
@@ -274,10 +303,14 @@ async function waitForServer(page) {
       'drag_pan=PASS',
       'toolbar=ABSENT',
       'figure_model.external=TRUE',
+      'figure_model.programmatic_override=PASS',
+      'figure_model.programmatic_rollback=PASS',
       'figure_model.toolbarless_feedback=RUNTIME_PASS',
       'production.renderer.default=NATIVE_CANVAS',
       'graphite.production=DISABLED',
       'render.unique_colors=' + uniqueColors,
+      'figure_model.override_diff_ratio=' + programmaticOverrideRatio,
+      'figure_model.rollback_diff_ratio=' + programmaticRollbackRatio,
       'tooltip.best_ratio=' + tooltipRatio,
       'tooltip.best_point=' + tooltipPoint.join(','),
       'zoom.diff_ratio=' + zoomRatio,
