@@ -290,7 +290,10 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     override suspend fun PointerInputScope.invoke() {
         awaitPointerEventScope {
             while (true) {
-                val event = awaitPointerEvent()
+                // Observe touch input before downstream Compose handlers can consume
+                // move events. Desktop already uses Initial pass for the same
+                // interaction contract; Android must do the same for reliable drag-pan.
+                val event = awaitPointerEvent(PointerEventPass.Initial)
                 val change = event.changes.first()
                 val position = change.position
 
