@@ -761,6 +761,18 @@ jobs:
           if (!(Select-String -Path $summary -Pattern "^figure_model.programmatic_rollback=PASS$" -Quiet)) {
             throw "Desktop smoke summary does not contain programmatic rollback evidence"
           }
+          if (!(Select-String -Path $summary -Pattern "^computation_messages.initial_dispatch=PASS$" -Quiet)) {
+            throw "Desktop smoke summary does not contain initial computation-message dispatch evidence"
+          }
+          if (!(Select-String -Path $summary -Pattern "^computation_messages.same_spec_dedup=PASS$" -Quiet)) {
+            throw "Desktop smoke summary does not contain computation-message dedup evidence"
+          }
+          if (!(Select-String -Path $summary -Pattern "^computation_messages.spec_replace_redispatch=PASS$" -Quiet)) {
+            throw "Desktop smoke summary does not contain spec replacement redispatch evidence"
+          }
+          if (!(Select-String -Path $summary -Pattern "^computation_messages.restore_redispatch=PASS$" -Quiet)) {
+            throw "Desktop smoke summary does not contain restored-spec redispatch evidence"
+          }
           if (!(Select-String -Path $summary -Pattern "^figure_model.reconnect_after_figure_replace=PASS$" -Quiet)) {
             throw "Desktop smoke summary does not contain FigureModel reconnect evidence"
           }
@@ -4139,6 +4151,10 @@ jobs:
           assert_line 'figure_model.programmatic_rollback=PASS' "$desktop_smoke"
           assert_line 'figure_model.reconnect_after_figure_replace=PASS' "$desktop_smoke"
           assert_line 'figure_model.replacement_control=PASS' "$desktop_smoke"
+          assert_line 'computation_messages.initial_dispatch=PASS' "$desktop_smoke"
+          assert_line 'computation_messages.same_spec_dedup=PASS' "$desktop_smoke"
+          assert_line 'computation_messages.spec_replace_redispatch=PASS' "$desktop_smoke"
+          assert_line 'computation_messages.restore_redispatch=PASS' "$desktop_smoke"
 
           assert_line 'result=MULTIPLATFORM_CONSUMER_SMOKE_PASS' "$multiplatform_smoke"
           assert_line 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$multiplatform_smoke"
@@ -4204,6 +4220,10 @@ jobs:
           desktop.figure_model_programmatic_rollback=PASS
           desktop.figure_model_reconnect_after_replace=PASS
           desktop.figure_model_replacement_control=PASS
+          desktop.computation_messages_initial_dispatch=PASS
+          desktop.computation_messages_same_spec_dedup=PASS
+          desktop.computation_messages_spec_replace_redispatch=PASS
+          desktop.computation_messages_restore_redispatch=PASS
           android.consumer=PASS
           android.release_aar=PASS
           android.emulator_runtime=PASS
