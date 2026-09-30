@@ -1,9 +1,9 @@
 package smoke
 
 import android.graphics.Bitmap
+import android.os.Build
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
-import java.io.BufferedInputStream
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -134,32 +134,32 @@ class AndroidConsumerRuntimeSmokeTest {
         // Directory setup and file redirection run in the same shell process.
         // This avoids racing an asynchronous executeShellCommand() mkdir against
         // the subsequent executeShellCommandRw() writer.
-        val pipes = uiAutomation.executeShellCommandRw("$setup && cat > '$path'")
-        val stdout = ParcelFileDescriptor.AutoCloseInputStream(pipes[0])
+        check(Build.VERSION.SDK_INT >= 34) {
+            "Android emulator smoke requires API 34+ for shell stderr capture"
+        }
 
-        ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use { input ->
+        val command =
+            "$setup && cat > '$path' && sync && test -s '$path' && " +
+                "echo ANDROID_SMOKE_FILE_OK"
+        val pipes = uiAutomation.executeShellCommandRwe(command)
+        val stdout = ParcelFileDescriptor.AutoCloseInputStream(pipes[0])
+        val stdin = ParcelFileDescriptor.AutoCloseOutputStream(pipes[1])
+        val stderr = ParcelFileDescriptor.AutoCloseInputStream(pipes[2])
+
+        stdin.use { input ->
             input.write(bytes)
             input.flush()
         }
 
-        // Closing stdin sends EOF to cat. Drain stdout afterwards so this method
-        // does not return until the shell command has actually exited.
-        BufferedInputStream(stdout).use { shellOut ->
-            while (shellOut.read() != -1) {
-                // Command is intentionally silent; draining is the completion barrier.
+        val shellOut = stdout.bufferedReader().use { it.readText().trim() }
+        val shellErr = stderr.bufferedReader().use { it.readText().trim() }
+
+        check(shellOut.lineSequence().any { it == "ANDROID_SMOKE_FILE_OK" }) {
+            buildString {
+                append("Android smoke evidence was not persisted: $path")
+                if (shellOut.isNotEmpty()) append("; stdout=$shellOut")
+                if (shellErr.isNotEmpty()) append("; stderr=$shellErr")
             }
-        }
-
-        val verify = uiAutomation.executeShellCommand(
-            "test -s '$path' && echo ANDROID_SMOKE_FILE_OK"
-        )
-        val verification =
-            ParcelFileDescriptor.AutoCloseInputStream(verify)
-                .bufferedReader()
-                .use { it.readText().trim() }
-
-        check(verification == "ANDROID_SMOKE_FILE_OK") {
-            "Android smoke evidence was not persisted: $path"
         }
     }
 
