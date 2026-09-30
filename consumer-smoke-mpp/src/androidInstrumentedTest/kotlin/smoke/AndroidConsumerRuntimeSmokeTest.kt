@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -28,7 +29,11 @@ class AndroidConsumerSmokeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .testTag("android-consumer-test-root")
+            ) {
                 ConsumerPlot()
             }
         }
@@ -43,7 +48,11 @@ class AndroidConsumerRuntimeSmokeTest {
 
     @Test
     fun publishedConsumerRendersAndDragPans() {
-        val plot = composeRule.onNodeWithTag("consumer-plot-root")
+        // Anchor the test to the Activity-owned wrapper instead of PlotPanel's modifier.
+        // PlotPanel legitimately reuses its modifier across internal layers, which can
+        // expose multiple semantics nodes with the same tag and makes input injection
+        // ambiguous even though the rendered plot itself is correct.
+        val plot = composeRule.onNodeWithTag("android-consumer-test-root")
         composeRule.waitForIdle()
         Thread.sleep(1_500)
 
