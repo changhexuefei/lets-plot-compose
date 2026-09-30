@@ -8,6 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -32,6 +35,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 class AndroidConsumerSmokeActivity : ComponentActivity() {
+    var alternateFigure by mutableStateOf(false)
     val figureModel = PlotFigureModel().apply {
         setDefaultInteractions(
             listOf(
@@ -49,7 +53,10 @@ class AndroidConsumerSmokeActivity : ComponentActivity() {
                     .fillMaxSize()
                     .testTag("android-consumer-test-root")
             ) {
-                ConsumerPlot(externalFigureModel = figureModel)
+                ConsumerPlot(
+                    externalFigureModel = figureModel,
+                    alternateFigure = alternateFigure
+                )
             }
         }
     }
@@ -115,7 +122,55 @@ class AndroidConsumerRuntimeSmokeTest {
             rollbackDiffRatio < 0.002
         )
 
-        var after = rollbackImage
+        composeRule.runOnIdle {
+            composeRule.activity.alternateFigure = true
+        }
+        composeRule.waitForIdle()
+        Thread.sleep(900)
+
+        val replacementImage = plot.captureToImage().asAndroidBitmap()
+        val replacementDiffRatio = pixelDifferenceRatio(rollbackImage, replacementImage)
+        assertTrue(
+            "Replacing the Android consumer figure did not visibly change the plot: " +
+                "diffRatio=$replacementDiffRatio",
+            replacementDiffRatio > 0.002
+        )
+
+        composeRule.runOnIdle {
+            composeRule.activity.figureModel.updateSpecOverride(
+                mapOf(COORD_XLIM_TRANSFORMED to listOf(1.5, 3.5))
+            )
+            composeRule.activity.figureModel.updateView()
+        }
+        composeRule.waitForIdle()
+        Thread.sleep(800)
+
+        val replacementControlledImage = plot.captureToImage().asAndroidBitmap()
+        val replacementControlDiffRatio =
+            pixelDifferenceRatio(replacementImage, replacementControlledImage)
+        assertTrue(
+            "The reused PlotFigureModel did not control the replacement Android figure: " +
+                "diffRatio=$replacementControlDiffRatio",
+            replacementControlDiffRatio > 0.002
+        )
+
+        composeRule.runOnIdle {
+            composeRule.activity.figureModel.updateSpecOverride(null)
+            composeRule.activity.figureModel.updateView()
+            composeRule.activity.alternateFigure = false
+        }
+        composeRule.waitForIdle()
+        Thread.sleep(900)
+
+        val restoredFigureImage = plot.captureToImage().asAndroidBitmap()
+        val restoredFigureDiffRatio = pixelDifferenceRatio(before, restoredFigureImage)
+        assertTrue(
+            "Restoring the original Android figure did not return near the baseline: " +
+                "diffRatio=$restoredFigureDiffRatio",
+            restoredFigureDiffRatio < 0.002
+        )
+
+        var after = restoredFigureImage
         var diffRatio = 0.0
         var panAttempts = 0
 
@@ -133,7 +188,7 @@ class AndroidConsumerRuntimeSmokeTest {
             Thread.sleep(800)
 
             after = plot.captureToImage().asAndroidBitmap()
-            diffRatio = pixelDifferenceRatio(rollbackImage, after)
+            diffRatio = pixelDifferenceRatio(restoredFigureImage, after)
             if (diffRatio > 0.002) {
                 break
             }
@@ -178,11 +233,16 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("figure_model.external=TRUE")
             appendLine("figure_model.programmatic_override=PASS")
             appendLine("figure_model.programmatic_rollback=PASS")
+            appendLine("figure_model.reconnect_after_figure_replace=PASS")
+            appendLine("figure_model.replacement_control=PASS")
             appendLine("figure_model.toolbarless_feedback=RUNTIME_PASS")
             appendLine("render.sampled_unique_colors=$uniqueColors")
             appendLine("render.plotted_point_pixels=$plottedPointPixels")
             appendLine("figure_model.override_diff_ratio=$programmaticDiffRatio")
             appendLine("figure_model.rollback_diff_ratio=$rollbackDiffRatio")
+            appendLine("figure_model.replace_diff_ratio=$replacementDiffRatio")
+            appendLine("figure_model.replacement_control_diff_ratio=$replacementControlDiffRatio")
+            appendLine("figure_model.restore_diff_ratio=$restoredFigureDiffRatio")
             appendLine("pan.diff_ratio=$diffRatio")
             appendLine("pan.attempts=$panAttempts")
             appendLine("tooltip.diff_ratio=$tooltipDiffRatio")
@@ -203,6 +263,9 @@ class AndroidConsumerRuntimeSmokeTest {
         writeShellFile("$remoteDir/03-tooltip.png", bitmapPngBytes(tooltipImage))
         writeShellFile("$remoteDir/04-programmatic-override.png", bitmapPngBytes(programmaticImage))
         writeShellFile("$remoteDir/05-programmatic-rollback.png", bitmapPngBytes(rollbackImage))
+        writeShellFile("$remoteDir/06-figure-replacement.png", bitmapPngBytes(replacementImage))
+        writeShellFile("$remoteDir/07-replacement-programmatic-override.png", bitmapPngBytes(replacementControlledImage))
+        writeShellFile("$remoteDir/08-restored-original-figure.png", bitmapPngBytes(restoredFigureImage))
         writeShellFile(
             "$remoteDir/android-emulator-consumer-smoke.txt",
             evidence.toByteArray(Charsets.UTF_8)
