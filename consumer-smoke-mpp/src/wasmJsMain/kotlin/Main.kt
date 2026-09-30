@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -37,6 +40,7 @@ fun main() {
             DisposableEffect(figureModel) {
                 onDispose { figureModel.dispose() }
             }
+            var alternateFigure by remember { mutableStateOf(false) }
 
             Column(Modifier.fillMaxSize()) {
                 Row(
@@ -72,12 +76,40 @@ fun main() {
                     }
                 }
 
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { alternateFigure = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicText("Replace figure")
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { alternateFigure = false },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicText("Restore figure")
+                    }
+                }
+
                 Box(
                     Modifier
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    ConsumerPlot(externalFigureModel = figureModel)
+                    ConsumerPlot(
+                        externalFigureModel = figureModel,
+                        alternateFigure = alternateFigure
+                    )
                 }
             }
         }

@@ -210,9 +210,53 @@ async function waitForServer(page) {
       );
     }
 
+    await page.mouse.click(275, 66);
+    await page.waitForTimeout(800);
+    const replacementFigure = await capture(page, clip, '05-figure-replacement.png');
+    const replacementFigureRatio = pixelDifferenceRatio(programmaticRollback, replacementFigure);
+    if (replacementFigureRatio <= diffThreshold) {
+      fail(
+        'Replacing the Wasm consumer figure did not visibly change the plot. ratio=' +
+          replacementFigureRatio
+      );
+    }
+
+    await page.mouse.click(275, 22);
+    await page.waitForTimeout(700);
+    const replacementControlled = await capture(
+      page,
+      clip,
+      '06-replacement-programmatic-override.png'
+    );
+    const replacementControlRatio =
+      pixelDifferenceRatio(replacementFigure, replacementControlled);
+    if (replacementControlRatio <= diffThreshold) {
+      fail(
+        'The reused PlotFigureModel did not control the replacement Wasm figure. ratio=' +
+          replacementControlRatio
+      );
+    }
+
+    await page.mouse.click(825, 22);
+    await page.waitForTimeout(450);
+    await page.mouse.click(825, 66);
+    await page.waitForTimeout(800);
+    // Re-run the no-op rollback so the restored image uses the same updateView()
+    // rebuild path as the original stable baseline.
+    await page.mouse.click(825, 22);
+    await page.waitForTimeout(700);
+    const restoredFigure = await capture(page, clip, '07-restored-original-figure.png');
+    const restoredFigureRatio = pixelDifferenceRatio(programmaticBaseline, restoredFigure);
+    if (restoredFigureRatio >= 0.002) {
+      fail(
+        'Restoring the original Wasm figure did not return to the stable baseline. ratio=' +
+          restoredFigureRatio
+      );
+    }
+
     await page.mouse.move(4, 4);
     await page.waitForTimeout(250);
-    const tooltipBaseline = await capture(page, clip, '05-tooltip-before.png');
+    const tooltipBaseline = await capture(page, clip, '08-tooltip-before.png');
 
     let tooltip = null;
     let tooltipRatio = 0;
@@ -258,7 +302,7 @@ async function waitForServer(page) {
           tooltipRatio + ' threshold=' + diffThreshold
       );
     }
-    fs.writeFileSync(path.join(outputDir, '06-tooltip-hover.png'), tooltip);
+    fs.writeFileSync(path.join(outputDir, '09-tooltip-hover.png'), tooltip);
 
     await page.mouse.move(4, 4);
     await page.waitForTimeout(250);
@@ -267,7 +311,7 @@ async function waitForServer(page) {
     await page.mouse.move(centerX, centerY);
     await page.mouse.wheel(0, -420);
     await page.waitForTimeout(700);
-    const zoom = await capture(page, clip, '07-wheel-zoom.png');
+    const zoom = await capture(page, clip, '10-wheel-zoom.png');
     const zoomRatio = pixelDifferenceRatio(beforeZoom, zoom);
     if (zoomRatio <= diffThreshold) {
       fail('Wheel zoom did not visibly change the plot. ratio=' + zoomRatio);
@@ -282,7 +326,7 @@ async function waitForServer(page) {
     }
     await page.mouse.up();
     await page.waitForTimeout(700);
-    const pan = await capture(page, clip, '08-drag-pan.png');
+    const pan = await capture(page, clip, '11-drag-pan.png');
     const panRatio = pixelDifferenceRatio(beforePan, pan);
     if (panRatio <= diffThreshold) {
       fail('Drag pan did not visibly change the plot. ratio=' + panRatio);
@@ -305,12 +349,17 @@ async function waitForServer(page) {
       'figure_model.external=TRUE',
       'figure_model.programmatic_override=PASS',
       'figure_model.programmatic_rollback=PASS',
+      'figure_model.reconnect_after_figure_replace=PASS',
+      'figure_model.replacement_control=PASS',
       'figure_model.toolbarless_feedback=RUNTIME_PASS',
       'production.renderer.default=NATIVE_CANVAS',
       'graphite.production=DISABLED',
       'render.unique_colors=' + uniqueColors,
       'figure_model.override_diff_ratio=' + programmaticOverrideRatio,
       'figure_model.rollback_diff_ratio=' + programmaticRollbackRatio,
+      'figure_model.replace_diff_ratio=' + replacementFigureRatio,
+      'figure_model.replacement_control_diff_ratio=' + replacementControlRatio,
+      'figure_model.restore_diff_ratio=' + restoredFigureRatio,
       'tooltip.best_ratio=' + tooltipRatio,
       'tooltip.best_point=' + tooltipPoint.join(','),
       'zoom.diff_ratio=' + zoomRatio,
