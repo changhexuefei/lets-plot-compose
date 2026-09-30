@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
@@ -99,6 +100,22 @@ class AndroidConsumerRuntimeSmokeTest {
             diffRatio > 0.002
         )
 
+        val plottedPoint = plottedPointCenter(after)
+        plot.performTouchInput {
+            click(plottedPoint)
+        }
+        composeRule.waitForIdle()
+        Thread.sleep(700)
+
+        val tooltipImage = plot.captureToImage().asAndroidBitmap()
+        val tooltipDiffRatio = pixelDifferenceRatio(after, tooltipImage)
+
+        assertTrue(
+            "Tap on a rendered data point did not produce visible tooltip feedback: " +
+                "point=$plottedPoint, diffRatio=$tooltipDiffRatio",
+            tooltipDiffRatio > 0.0005
+        )
+
         val evidence = buildString {
             appendLine("schema=1")
             appendLine("result=ANDROID_EMULATOR_CONSUMER_SMOKE_PASS")
@@ -106,6 +123,7 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("runtime=ANDROID_EMULATOR")
             appendLine("render=PASS")
             appendLine("drag_pan=PASS")
+            appendLine("tooltip=PASS")
             appendLine("toolbar=ABSENT")
             appendLine("figure_model.external=TRUE")
             appendLine("figure_model.toolbarless_feedback=RUNTIME_PASS")
@@ -113,6 +131,9 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("render.plotted_point_pixels=$plottedPointPixels")
             appendLine("pan.diff_ratio=$diffRatio")
             appendLine("pan.attempts=$panAttempts")
+            appendLine("tooltip.diff_ratio=$tooltipDiffRatio")
+            appendLine("tooltip.point_x=${plottedPoint.x}")
+            appendLine("tooltip.point_y=${plottedPoint.y}")
             appendLine("production.renderer.default=NATIVE_CANVAS")
             appendLine("graphite.production=DISABLED")
         }
@@ -125,6 +146,7 @@ class AndroidConsumerRuntimeSmokeTest {
             resetDirectory = true
         )
         writeShellFile("$remoteDir/02-drag-pan.png", bitmapPngBytes(after))
+        writeShellFile("$remoteDir/03-tooltip.png", bitmapPngBytes(tooltipImage))
         writeShellFile(
             "$remoteDir/android-emulator-consumer-smoke.txt",
             evidence.toByteArray(Charsets.UTF_8)
@@ -214,6 +236,38 @@ class AndroidConsumerRuntimeSmokeTest {
         return colors.size
     }
 
+    private fun plottedPointCenter(bitmap: Bitmap): Offset {
+        val xs = mutableListOf<Int>()
+        val ys = mutableListOf<Int>()
+
+        for (y in 0 until bitmap.height step 2) {
+            for (x in 0 until bitmap.width step 2) {
+                if (isPlottedPointPixel(bitmap.getPixel(x, y))) {
+                    xs += x
+                    ys += y
+                }
+            }
+        }
+
+        check(xs.isNotEmpty()) {
+            "No plotted-point pixels were available for Android tooltip interaction"
+        }
+
+        xs.sort()
+        ys.sort()
+        return Offset(
+            x = xs[xs.size / 2].toFloat(),
+            y = ys[ys.size / 2].toFloat()
+        )
+    }
+
+    private fun isPlottedPointPixel(pixel: Int): Boolean {
+        val red = android.graphics.Color.red(pixel)
+        val green = android.graphics.Color.green(pixel)
+        val blue = android.graphics.Color.blue(pixel)
+        return red >= 150 && red - green >= 45 && red - blue >= 45
+    }
+
     private fun plottedPointPixelCount(bitmap: Bitmap): Int {
         var count = 0
         var y = 0
@@ -222,11 +276,8 @@ class AndroidConsumerRuntimeSmokeTest {
             var x = 0
             while (x < bitmap.width) {
                 val pixel = bitmap.getPixel(x, y)
-                val red = android.graphics.Color.red(pixel)
-                val green = android.graphics.Color.green(pixel)
-                val blue = android.graphics.Color.blue(pixel)
 
-                if (red >= 150 && red - green >= 45 && red - blue >= 45) {
+                if (isPlottedPointPixel(pixel)) {
                     count++
                 }
                 x += 2
