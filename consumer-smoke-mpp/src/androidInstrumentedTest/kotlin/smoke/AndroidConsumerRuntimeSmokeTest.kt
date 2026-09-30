@@ -100,12 +100,13 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("graphite.production=DISABLED")
         }
 
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val uiAutomation = instrumentation.uiAutomation
         val remoteDir = "/data/local/tmp/android-consumer-smoke"
 
-        uiAutomation.executeShellCommand("rm -rf $remoteDir && mkdir -p $remoteDir").close()
-        writeShellFile("$remoteDir/01-render.png", bitmapPngBytes(before))
+        writeShellFile(
+            path = "$remoteDir/01-render.png",
+            bytes = bitmapPngBytes(before),
+            resetDirectory = true
+        )
         writeShellFile("$remoteDir/02-drag-pan.png", bitmapPngBytes(after))
         writeShellFile(
             "$remoteDir/android-emulator-consumer-smoke.txt",
@@ -115,9 +116,24 @@ class AndroidConsumerRuntimeSmokeTest {
         println(evidence)
     }
 
-    private fun writeShellFile(path: String, bytes: ByteArray) {
+    private fun writeShellFile(
+        path: String,
+        bytes: ByteArray,
+        resetDirectory: Boolean = false
+    ) {
         val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        val pipes = uiAutomation.executeShellCommandRw("cat > '$path'")
+        val parent = path.substringBeforeLast('/')
+        val setup =
+            if (resetDirectory) {
+                "rm -rf '$parent' && mkdir -p '$parent'"
+            } else {
+                "mkdir -p '$parent'"
+            }
+
+        // Directory setup and file redirection run in the same shell process.
+        // This avoids racing an asynchronous executeShellCommand() mkdir against
+        // the subsequent executeShellCommandRw() writer.
+        val pipes = uiAutomation.executeShellCommandRw("$setup && cat > '$path'")
         pipes[0].close()
         ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use { output ->
             output.write(bytes)
