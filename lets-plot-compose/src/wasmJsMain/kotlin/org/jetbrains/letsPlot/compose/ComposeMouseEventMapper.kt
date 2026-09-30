@@ -34,7 +34,10 @@ class ComposeMouseEventMapper : MouseEventSource, PointerInputEventHandler {
     override suspend fun PointerInputScope.invoke() {
         awaitPointerEventScope {
             while (true) {
-                val event = awaitPointerEvent()
+                // Observe pointer input before downstream Compose handlers can consume
+                // move/scroll events. Desktop and Android use the same Initial pass
+                // so all Compose targets share one interaction-delivery contract.
+                val event = awaitPointerEvent(PointerEventPass.Initial)
                 val change = event.changes.first()
                 val position = change.position
 
