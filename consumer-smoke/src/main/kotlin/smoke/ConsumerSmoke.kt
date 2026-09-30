@@ -45,6 +45,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.imageio.ImageIO
 import kotlin.math.abs
@@ -66,6 +67,7 @@ fun main() {
     val visibleWindow = AtomicReference<AwtWindow?>()
     val externalFigureModel = AtomicReference<PlotFigureModel?>()
     val figureVariantSetter = AtomicReference<((Boolean) -> Unit)?>()
+    val computationCallbackCount = AtomicInteger(0)
     val asyncFailure = AtomicReference<Throwable?>()
     val completed = AtomicBoolean(false)
 
@@ -96,7 +98,8 @@ fun main() {
                     SmokeContent(
                         densityScale = densityScale,
                         externalFigureModelRef = externalFigureModel,
-                        figureVariantSetterRef = figureVariantSetter
+                        figureVariantSetterRef = figureVariantSetter,
+                        computationCallbackCount = computationCallbackCount
                     )
                 }
             }
@@ -115,6 +118,12 @@ fun main() {
                 assertImageHasContent(renderImage)
                 assertSmokeFigureRendered(renderImage)
                 checkpoint("render")
+
+                awaitComputationCallbackCount(computationCallbackCount, expected = 1)
+                check(computationCallbackCount.get() == 1) {
+                    "Initial figure dispatched computation messages more than once: " +
+                        "count=${computationCallbackCount.get()}"
+                }
 
                 val figureModel = awaitFigureModel(externalFigureModel)
                 val programmaticDir = outputDir.resolve("programmatic")
@@ -160,6 +169,10 @@ fun main() {
                     "Programmatic FigureModel rollback did not restore the Desktop consumer baseline. " +
                         "ratio=$programmaticRollbackRatio"
                 }
+                check(computationCallbackCount.get() == 1) {
+                    "Same-spec programmatic updates redispatched computation messages: " +
+                        "count=${computationCallbackCount.get()}"
+                }
                 checkpoint("figure-model-programmatic")
 
                 val lifecycleDir = outputDir.resolve("lifecycle")
@@ -174,6 +187,11 @@ fun main() {
                 setAlternateFigure(true)
                 delay(1_000)
                 ensureNoAsyncFailure(asyncFailure)
+                awaitComputationCallbackCount(computationCallbackCount, expected = 2)
+                check(computationCallbackCount.get() == 2) {
+                    "Replacement figure did not start exactly one new computation-message cycle: " +
+                        "count=${computationCallbackCount.get()}"
+                }
 
                 val reboundModel = awaitFigureModel(externalFigureModel)
                 check(reboundModel === figureModel) {
@@ -209,11 +227,20 @@ fun main() {
                     "The reused PlotFigureModel did not control the replacement figure. " +
                         "ratio=$replacementControlDiffRatio"
                 }
+                check(computationCallbackCount.get() == 2) {
+                    "Same-spec replacement override redispatched computation messages: " +
+                        "count=${computationCallbackCount.get()}"
+                }
 
                 figureModel.updateSpecOverride(null)
                 figureModel.updateView()
                 setAlternateFigure(false)
                 delay(1_000)
+                awaitComputationCallbackCount(computationCallbackCount, expected = 3)
+                check(computationCallbackCount.get() == 3) {
+                    "Restoring the original spec did not start exactly one new computation-message cycle: " +
+                        "count=${computationCallbackCount.get()}"
+                }
 
                 val restoredModel = awaitFigureModel(externalFigureModel)
                 check(restoredModel === figureModel) {
@@ -408,7 +435,12 @@ fun main() {
                         appendLine("figure_model.replacement_control=PASS")
                         appendLine("figure_model.replace_diff_ratio=$figureReplaceDiffRatio")
                         appendLine("figure_model.replacement_control_diff_ratio=$replacementControlDiffRatio")
-                        appendLine("checks=render,figure-model-programmatic,figure-model-reconnect,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
+                        appendLine("computation_messages.initial_dispatch=PASS")
+                        appendLine("computation_messages.same_spec_dedup=PASS")
+                        appendLine("computation_messages.spec_replace_redispatch=PASS")
+                        appendLine("computation_messages.restore_redispatch=PASS")
+                        appendLine("computation_messages.pre_reopen_count=3")
+                        appendLine("checks=render,figure-model-programmatic,figure-model-reconnect,computation-message-redispatch,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
                     }
                 )
 
@@ -431,7 +463,8 @@ fun main() {
 private fun SmokeContent(
     densityScale: Float,
     externalFigureModelRef: AtomicReference<PlotFigureModel?>,
-    figureVariantSetterRef: AtomicReference<((Boolean) -> Unit)?>
+    figureVariantSetterRef: AtomicReference<((Boolean) -> Unit)?>,
+    computationCallbackCount: AtomicInteger
 ) {
     var alternateFigure by remember { mutableStateOf(false) }
     val figure = remember(alternateFigure) {
@@ -486,6 +519,8 @@ private fun SmokeContent(
                         preserveAspectRatio = false,
                         modifier = Modifier.fillMaxSize()
                     ) { messages ->
+                        val count = computationCallbackCount.incrementAndGet()
+                        println("SMOKE_COMPUTATION_MESSAGES dispatch=$count size=${messages.size}")
                         messages.forEach { println("SMOKE_PLOT_MESSAGE $it") }
                     }
                 }
@@ -530,6 +565,22 @@ private fun createAlternateFigure(): Figure {
             x = "x"
             y = "y"
         }
+}
+
+private suspend fun awaitComputationCallbackCount(
+    counter: AtomicInteger,
+    expected: Int
+) {
+    repeat(100) {
+        if (counter.get() >= expected) {
+            return
+        }
+        delay(100)
+    }
+    error(
+        "Timed out waiting for computation-message callback count $expected; " +
+            "actual=${counter.get()}"
+    )
 }
 
 private suspend fun awaitFigureVariantSetter(
