@@ -29,6 +29,7 @@ import org.jetbrains.letsPlot.compose.PlotFigureModel
 import org.jetbrains.letsPlot.compose.PlotPanel
 import org.jetbrains.letsPlot.compose.PlotPanelRaw
 import org.jetbrains.letsPlot.core.interact.InteractionSpec
+import org.jetbrains.letsPlot.core.plot.builder.interact.tools.FigureModelOptions.COORD_XLIM_TRANSFORMED
 import org.jetbrains.letsPlot.geom.geomPoint
 import org.jetbrains.letsPlot.letsPlot
 import java.awt.EventQueue
@@ -63,6 +64,7 @@ fun main() {
     Files.createDirectories(outputDir)
 
     val visibleWindow = AtomicReference<AwtWindow?>()
+    val externalFigureModel = AtomicReference<PlotFigureModel?>()
     val asyncFailure = AtomicReference<Throwable?>()
     val completed = AtomicBoolean(false)
 
@@ -91,7 +93,8 @@ fun main() {
                     }
 
                     SmokeContent(
-                        densityScale = densityScale
+                        densityScale = densityScale,
+                        externalFigureModelRef = externalFigureModel
                     )
                 }
             }
@@ -110,6 +113,53 @@ fun main() {
                 assertImageHasContent(renderImage)
                 assertSmokeFigureRendered(renderImage)
                 checkpoint("render")
+
+                val figureModel = awaitFigureModel(externalFigureModel)
+                val programmaticDir = outputDir.resolve("programmatic")
+                Files.createDirectories(programmaticDir)
+
+                figureModel.updateSpecOverride(null)
+                figureModel.updateView()
+                delay(900)
+                val programmaticBaseline = captureWindow(
+                    robot,
+                    firstWindow,
+                    programmaticDir.resolve("01-baseline.png")
+                )
+
+                figureModel.updateSpecOverride(
+                    mapOf(COORD_XLIM_TRANSFORMED to listOf(-1.25, 1.25))
+                )
+                figureModel.updateView()
+                delay(900)
+                val programmaticOverride = captureWindow(
+                    robot,
+                    firstWindow,
+                    programmaticDir.resolve("02-override.png")
+                )
+                val programmaticOverrideRatio =
+                    pixelDifferenceRatio(programmaticBaseline, programmaticOverride)
+                check(programmaticOverrideRatio > IMAGE_CHANGE_THRESHOLD) {
+                    "Programmatic FigureModel override did not visibly change the Desktop consumer. " +
+                        "ratio=$programmaticOverrideRatio"
+                }
+
+                figureModel.updateSpecOverride(null)
+                figureModel.updateView()
+                delay(900)
+                val programmaticRollback = captureWindow(
+                    robot,
+                    firstWindow,
+                    programmaticDir.resolve("03-rollback.png")
+                )
+                val programmaticRollbackRatio =
+                    pixelDifferenceRatio(programmaticBaseline, programmaticRollback)
+                check(programmaticRollbackRatio < 0.002) {
+                    "Programmatic FigureModel rollback did not restore the Desktop consumer baseline. " +
+                        "ratio=$programmaticRollbackRatio"
+                }
+                checkpoint("figure-model-programmatic")
+
                 val initialWindowWidth = firstWindow.width
                 val initialWindowHeight = firstWindow.height
                 val requestedWidth = (initialWindowWidth - 140).coerceAtLeast(640)
@@ -283,7 +333,12 @@ fun main() {
                             "graphite.runtime.cleanup=" +
                                 (System.getProperty("letsplot.compose.graphite.runtime.cleanup") ?: "ABSENT")
                         )
-                        appendLine("checks=render,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
+                        appendLine("figure_model.external=TRUE")
+                        appendLine("figure_model.programmatic_override=PASS")
+                        appendLine("figure_model.programmatic_rollback=PASS")
+                        appendLine("figure_model.override_diff_ratio=$programmaticOverrideRatio")
+                        appendLine("figure_model.rollback_diff_ratio=$programmaticRollbackRatio")
+                        appendLine("checks=render,figure-model-programmatic,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
                     }
                 )
 
@@ -304,10 +359,19 @@ fun main() {
 
 @Composable
 private fun SmokeContent(
-    densityScale: Float
+    densityScale: Float,
+    externalFigureModelRef: AtomicReference<PlotFigureModel?>
 ) {
     val figure = remember { createFigure() }
     val figureModel = remember { PlotFigureModel() }
+
+    DisposableEffect(figureModel, externalFigureModelRef) {
+        externalFigureModelRef.set(figureModel)
+        onDispose {
+            externalFigureModelRef.compareAndSet(figureModel, null)
+            figureModel.dispose()
+        }
+    }
 
     LaunchedEffect(figureModel) {
         figureModel.setDefaultInteractions(
@@ -373,6 +437,16 @@ private fun createFigure(): Figure {
             y = "y"
             color = "group"
         }
+}
+
+private suspend fun awaitFigureModel(
+    ref: AtomicReference<PlotFigureModel?>
+): PlotFigureModel {
+    repeat(150) {
+        ref.get()?.let { return it }
+        delay(100)
+    }
+    error("Timed out waiting for external PlotFigureModel.")
 }
 
 private suspend fun awaitVisibleWindow(ref: AtomicReference<AwtWindow?>): AwtWindow {
