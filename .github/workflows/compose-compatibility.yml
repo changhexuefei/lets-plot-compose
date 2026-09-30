@@ -757,6 +757,12 @@ jobs:
           if (!(Select-String -Path $summary -Pattern "^figure_model.programmatic_rollback=PASS$" -Quiet)) {
             throw "Desktop smoke summary does not contain programmatic rollback evidence"
           }
+          if (!(Select-String -Path $summary -Pattern "^figure_model.reconnect_after_figure_replace=PASS$" -Quiet)) {
+            throw "Desktop smoke summary does not contain FigureModel reconnect evidence"
+          }
+          if (!(Select-String -Path $summary -Pattern "^figure_model.replacement_control=PASS$" -Quiet)) {
+            throw "Desktop smoke summary does not contain replacement control evidence"
+          }
 
       - name: Capture Skiko renderer dependency report
         working-directory: compose
@@ -814,6 +820,7 @@ jobs:
           path: |
             compose/consumer-smoke/build/smoke/*.png
             compose/consumer-smoke/build/smoke/programmatic/*.png
+            compose/consumer-smoke/build/smoke/lifecycle/*.png
             compose/consumer-smoke/build/smoke/smoke-summary.txt
             compose/consumer-smoke/build/smoke/baseline-manifest.txt
             compose/consumer-smoke/build/smoke/renderer-dependencies.txt
@@ -4124,6 +4131,8 @@ jobs:
           assert_line 'result=PASS' "$desktop_smoke"
           assert_line 'figure_model.programmatic_override=PASS' "$desktop_smoke"
           assert_line 'figure_model.programmatic_rollback=PASS' "$desktop_smoke"
+          assert_line 'figure_model.reconnect_after_figure_replace=PASS' "$desktop_smoke"
+          assert_line 'figure_model.replacement_control=PASS' "$desktop_smoke"
 
           assert_line 'result=MULTIPLATFORM_CONSUMER_SMOKE_PASS' "$multiplatform_smoke"
           assert_line 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$multiplatform_smoke"
@@ -4183,6 +4192,8 @@ jobs:
           desktop.required_screenshots=9
           desktop.figure_model_programmatic_override=PASS
           desktop.figure_model_programmatic_rollback=PASS
+          desktop.figure_model_reconnect_after_replace=PASS
+          desktop.figure_model_replacement_control=PASS
           android.consumer=PASS
           android.release_aar=PASS
           android.emulator_runtime=PASS
