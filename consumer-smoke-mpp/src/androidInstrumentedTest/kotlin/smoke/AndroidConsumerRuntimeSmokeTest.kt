@@ -124,30 +124,21 @@ class AndroidConsumerRuntimeSmokeTest {
     ) {
         val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val parent = path.substringBeforeLast('/')
-        val setup =
-            if (resetDirectory) {
-                "rm -rf '$parent' && mkdir -p '$parent'"
-            } else {
-                "mkdir -p '$parent'"
-            }
 
-        // Directory setup and file redirection run in the same shell process.
-        // This avoids racing an asynchronous executeShellCommand() mkdir against
-        // the subsequent executeShellCommandRw() writer.
         check(Build.VERSION.SDK_INT >= 34) {
             "Android emulator smoke requires API 34+ for shell stderr capture"
         }
 
-        // UiAutomation shell commands are tokenized by the shell service rather
-        // than parsed as a compound shell expression. Wrap the sequence explicitly
-        // in /system/bin/sh -c so &&, redirection and test are interpreted correctly.
-        val compoundCommand =
-            "$setup && cat > '$path' && sync && test -s '$path' && " +
-                "echo ANDROID_SMOKE_FILE_OK"
-        val command = "/system/bin/sh -c \"" +
-            compoundCommand.replace("\\", "\\\\").replace("\"", "\\\"") +
-            "\""
-        val pipes = uiAutomation.executeShellCommandRwe(command)
+        if (resetDirectory) {
+            runShellCommand("rm -rf $parent")
+        }
+        runShellCommand("mkdir -p $parent")
+
+        // Avoid shell redirection and compound expressions entirely. UiAutomation
+        // tokenizes commands before execution, so quoting/redirection is brittle.
+        // dd accepts the destination as a normal argument and consumes bytes
+        // directly from stdin.
+        val pipes = uiAutomation.executeShellCommandRwe("dd of=$path")
         val stdout = ParcelFileDescriptor.AutoCloseInputStream(pipes[0])
         val stdin = ParcelFileDescriptor.AutoCloseOutputStream(pipes[1])
         val stderr = ParcelFileDescriptor.AutoCloseInputStream(pipes[2])
@@ -160,15 +151,28 @@ class AndroidConsumerRuntimeSmokeTest {
         val shellOut = stdout.bufferedReader().use { it.readText().trim() }
         val shellErr = stderr.bufferedReader().use { it.readText().trim() }
 
-        check(shellOut.lineSequence().any { it == "ANDROID_SMOKE_FILE_OK" }) {
+        val sizeOutput = runShellCommand("stat -c %s $path")
+        val persistedSize = sizeOutput.trim().toLongOrNull() ?: -1L
+
+        check(persistedSize == bytes.size.toLong()) {
             buildString {
-                append("Android smoke evidence was not persisted: $path")
+                append(
+                    "Android smoke evidence size mismatch: $path " +
+                        "expected=${bytes.size} actual=$persistedSize"
+                )
                 if (shellOut.isNotEmpty()) append("; stdout=$shellOut")
                 if (shellErr.isNotEmpty()) append("; stderr=$shellErr")
             }
         }
     }
 
+    private fun runShellCommand(command: String): String {
+        val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val result = uiAutomation.executeShellCommand(command)
+        return ParcelFileDescriptor.AutoCloseInputStream(result)
+            .bufferedReader()
+            .use { it.readText() }
+    }
     private fun bitmapPngBytes(bitmap: Bitmap): ByteArray =
         ByteArrayOutputStream().use { stream ->
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
