@@ -13,7 +13,7 @@ import org.jetbrains.letsPlot.geom.geomPoint
 import org.jetbrains.letsPlot.letsPlot
 
 @Composable
-fun ConsumerPlot() {
+fun ConsumerPlot(externalFigureModel: PlotFigureModel? = null) {
     val data = mapOf(
         "x" to listOf(1, 2, 3),
         "y" to listOf(1, 4, 9)
@@ -24,8 +24,8 @@ fun ConsumerPlot() {
             y = "y"
         }
     }
-    val figureModel = remember {
-        PlotFigureModel().apply {
+    val figureModel = remember(externalFigureModel) {
+        externalFigureModel ?: PlotFigureModel().apply {
             setDefaultInteractions(
                 listOf(
                     InteractionSpec(InteractionSpec.Name.WHEEL_ZOOM),
@@ -34,8 +34,12 @@ fun ConsumerPlot() {
             )
         }
     }
-    DisposableEffect(figureModel) {
-        onDispose { figureModel.dispose() }
+    DisposableEffect(figureModel, externalFigureModel) {
+        onDispose {
+            if (externalFigureModel == null) {
+                figureModel.dispose()
+            }
+        }
     }
 
     PlotPanel(
