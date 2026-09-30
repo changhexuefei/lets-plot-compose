@@ -23,12 +23,24 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
 import java.util.ArrayDeque
 import kotlin.math.abs
+import org.jetbrains.letsPlot.compose.PlotFigureModel
+import org.jetbrains.letsPlot.core.interact.InteractionSpec
+import org.jetbrains.letsPlot.core.plot.builder.interact.tools.FigureModelOptions.COORD_XLIM_TRANSFORMED
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 class AndroidConsumerSmokeActivity : ComponentActivity() {
+    val figureModel = PlotFigureModel().apply {
+        setDefaultInteractions(
+            listOf(
+                InteractionSpec(InteractionSpec.Name.WHEEL_ZOOM),
+                InteractionSpec(InteractionSpec.Name.DRAG_PAN)
+            )
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -37,9 +49,14 @@ class AndroidConsumerSmokeActivity : ComponentActivity() {
                     .fillMaxSize()
                     .testTag("android-consumer-test-root")
             ) {
-                ConsumerPlot()
+                ConsumerPlot(externalFigureModel = figureModel)
             }
         }
+    }
+
+    override fun onDestroy() {
+        figureModel.dispose()
+        super.onDestroy()
     }
 }
 
@@ -66,7 +83,39 @@ class AndroidConsumerRuntimeSmokeTest {
             uniqueColors >= 4 && plottedPointPixels >= 20
         )
 
-        var after = before
+        composeRule.runOnIdle {
+            composeRule.activity.figureModel.updateSpecOverride(
+                mapOf(COORD_XLIM_TRANSFORMED to listOf(1.4, 2.6))
+            )
+            composeRule.activity.figureModel.updateView()
+        }
+        composeRule.waitForIdle()
+        Thread.sleep(800)
+
+        val programmaticImage = plot.captureToImage().asAndroidBitmap()
+        val programmaticDiffRatio = pixelDifferenceRatio(before, programmaticImage)
+        assertTrue(
+            "Programmatic FigureModel override did not visibly change the Android consumer: " +
+                "diffRatio=$programmaticDiffRatio",
+            programmaticDiffRatio > 0.002
+        )
+
+        composeRule.runOnIdle {
+            composeRule.activity.figureModel.updateSpecOverride(null)
+            composeRule.activity.figureModel.updateView()
+        }
+        composeRule.waitForIdle()
+        Thread.sleep(800)
+
+        val rollbackImage = plot.captureToImage().asAndroidBitmap()
+        val rollbackDiffRatio = pixelDifferenceRatio(before, rollbackImage)
+        assertTrue(
+            "Programmatic FigureModel rollback did not restore the Android consumer: " +
+                "diffRatio=$rollbackDiffRatio",
+            rollbackDiffRatio < 0.002
+        )
+
+        var after = rollbackImage
         var diffRatio = 0.0
         var panAttempts = 0
 
@@ -84,7 +133,7 @@ class AndroidConsumerRuntimeSmokeTest {
             Thread.sleep(800)
 
             after = plot.captureToImage().asAndroidBitmap()
-            diffRatio = pixelDifferenceRatio(before, after)
+            diffRatio = pixelDifferenceRatio(rollbackImage, after)
             if (diffRatio > 0.002) {
                 break
             }
@@ -127,9 +176,13 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("tooltip=PASS")
             appendLine("toolbar=ABSENT")
             appendLine("figure_model.external=TRUE")
+            appendLine("figure_model.programmatic_override=PASS")
+            appendLine("figure_model.programmatic_rollback=PASS")
             appendLine("figure_model.toolbarless_feedback=RUNTIME_PASS")
             appendLine("render.sampled_unique_colors=$uniqueColors")
             appendLine("render.plotted_point_pixels=$plottedPointPixels")
+            appendLine("figure_model.override_diff_ratio=$programmaticDiffRatio")
+            appendLine("figure_model.rollback_diff_ratio=$rollbackDiffRatio")
             appendLine("pan.diff_ratio=$diffRatio")
             appendLine("pan.attempts=$panAttempts")
             appendLine("tooltip.diff_ratio=$tooltipDiffRatio")
@@ -148,6 +201,8 @@ class AndroidConsumerRuntimeSmokeTest {
         )
         writeShellFile("$remoteDir/02-drag-pan.png", bitmapPngBytes(after))
         writeShellFile("$remoteDir/03-tooltip.png", bitmapPngBytes(tooltipImage))
+        writeShellFile("$remoteDir/04-programmatic-override.png", bitmapPngBytes(programmaticImage))
+        writeShellFile("$remoteDir/05-programmatic-rollback.png", bitmapPngBytes(rollbackImage))
         writeShellFile(
             "$remoteDir/android-emulator-consumer-smoke.txt",
             evidence.toByteArray(Charsets.UTF_8)
