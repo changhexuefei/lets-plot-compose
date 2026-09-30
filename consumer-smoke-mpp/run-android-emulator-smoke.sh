@@ -13,8 +13,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 evidence_dir="$PWD/consumer-smoke-mpp/build/evidence/android-emulator"
 mkdir -p "$evidence_dir"
 
-# This library runs in the instrumentation APK, whose ID is set in build.gradle.kts.
-package_name='org.jetbrains.letsplot.smoke.mpp.test'
+# The test writes evidence through Instrumentation.targetContext, so the files
+# belong to the target APK package (the Android namespace), not testApplicationId.
+package_name='org.jetbrains.letsplot.smoke.mpp'
 remote_dir='files/android-consumer-smoke'
 
 adb exec-out run-as "$package_name" \
