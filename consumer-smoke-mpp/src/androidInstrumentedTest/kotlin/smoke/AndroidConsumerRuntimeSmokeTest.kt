@@ -3,6 +3,7 @@ package smoke
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import java.io.BufferedInputStream
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -134,10 +135,31 @@ class AndroidConsumerRuntimeSmokeTest {
         // This avoids racing an asynchronous executeShellCommand() mkdir against
         // the subsequent executeShellCommandRw() writer.
         val pipes = uiAutomation.executeShellCommandRw("$setup && cat > '$path'")
-        pipes[0].close()
-        ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use { output ->
-            output.write(bytes)
-            output.flush()
+        val stdout = ParcelFileDescriptor.AutoCloseInputStream(pipes[0])
+
+        ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use { input ->
+            input.write(bytes)
+            input.flush()
+        }
+
+        // Closing stdin sends EOF to cat. Drain stdout afterwards so this method
+        // does not return until the shell command has actually exited.
+        BufferedInputStream(stdout).use { shellOut ->
+            while (shellOut.read() != -1) {
+                // Command is intentionally silent; draining is the completion barrier.
+            }
+        }
+
+        val verify = uiAutomation.executeShellCommand(
+            "test -s '$path' && echo ANDROID_SMOKE_FILE_OK"
+        )
+        val verification =
+            ParcelFileDescriptor.AutoCloseInputStream(verify)
+                .bufferedReader()
+                .use { it.readText().trim() }
+
+        check(verification == "ANDROID_SMOKE_FILE_OK") {
+            "Android smoke evidence was not persisted: $path"
         }
     }
 
