@@ -65,6 +65,7 @@ fun main() {
 
     val visibleWindow = AtomicReference<AwtWindow?>()
     val externalFigureModel = AtomicReference<PlotFigureModel?>()
+    val figureVariantSetter = AtomicReference<((Boolean) -> Unit)?>()
     val asyncFailure = AtomicReference<Throwable?>()
     val completed = AtomicBoolean(false)
 
@@ -94,7 +95,8 @@ fun main() {
 
                     SmokeContent(
                         densityScale = densityScale,
-                        externalFigureModelRef = externalFigureModel
+                        externalFigureModelRef = externalFigureModel,
+                        figureVariantSetterRef = figureVariantSetter
                     )
                 }
             }
@@ -159,6 +161,70 @@ fun main() {
                         "ratio=$programmaticRollbackRatio"
                 }
                 checkpoint("figure-model-programmatic")
+
+                val lifecycleDir = outputDir.resolve("lifecycle")
+                Files.createDirectories(lifecycleDir)
+                val reconnectBaseline = captureWindow(
+                    robot,
+                    firstWindow,
+                    lifecycleDir.resolve("01-before-figure-replace.png")
+                )
+
+                val setAlternateFigure = awaitFigureVariantSetter(figureVariantSetter)
+                setAlternateFigure(true)
+                delay(1_000)
+                ensureNoAsyncFailure(asyncFailure)
+
+                val reboundModel = awaitFigureModel(externalFigureModel)
+                check(reboundModel === figureModel) {
+                    "Replacing the figure created a different external PlotFigureModel instance."
+                }
+
+                val replacedFigure = captureWindow(
+                    robot,
+                    firstWindow,
+                    lifecycleDir.resolve("02-after-figure-replace.png")
+                )
+                val figureReplaceDiffRatio =
+                    pixelDifferenceRatio(reconnectBaseline, replacedFigure)
+                check(figureReplaceDiffRatio > IMAGE_CHANGE_THRESHOLD) {
+                    "Replacing the figure did not visibly update the Desktop consumer. " +
+                        "ratio=$figureReplaceDiffRatio"
+                }
+
+                figureModel.updateSpecOverride(
+                    mapOf(COORD_XLIM_TRANSFORMED to listOf(-1.5, 1.5))
+                )
+                figureModel.updateView()
+                delay(900)
+
+                val controlledReplacement = captureWindow(
+                    robot,
+                    firstWindow,
+                    lifecycleDir.resolve("03-replacement-programmatic-override.png")
+                )
+                val replacementControlDiffRatio =
+                    pixelDifferenceRatio(replacedFigure, controlledReplacement)
+                check(replacementControlDiffRatio > IMAGE_CHANGE_THRESHOLD) {
+                    "The reused PlotFigureModel did not control the replacement figure. " +
+                        "ratio=$replacementControlDiffRatio"
+                }
+
+                figureModel.updateSpecOverride(null)
+                figureModel.updateView()
+                setAlternateFigure(false)
+                delay(1_000)
+
+                val restoredModel = awaitFigureModel(externalFigureModel)
+                check(restoredModel === figureModel) {
+                    "Restoring the original figure replaced the external PlotFigureModel instance."
+                }
+                captureWindow(
+                    robot,
+                    firstWindow,
+                    lifecycleDir.resolve("04-restored-original-figure.png")
+                )
+                checkpoint("figure-model-reconnect")
 
                 val initialWindowWidth = firstWindow.width
                 val initialWindowHeight = firstWindow.height
@@ -338,7 +404,11 @@ fun main() {
                         appendLine("figure_model.programmatic_rollback=PASS")
                         appendLine("figure_model.override_diff_ratio=$programmaticOverrideRatio")
                         appendLine("figure_model.rollback_diff_ratio=$programmaticRollbackRatio")
-                        appendLine("checks=render,figure-model-programmatic,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
+                        appendLine("figure_model.reconnect_after_figure_replace=PASS")
+                        appendLine("figure_model.replacement_control=PASS")
+                        appendLine("figure_model.replace_diff_ratio=$figureReplaceDiffRatio")
+                        appendLine("figure_model.replacement_control_diff_ratio=$replacementControlDiffRatio")
+                        appendLine("checks=render,figure-model-programmatic,figure-model-reconnect,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
                     }
                 )
 
@@ -360,14 +430,20 @@ fun main() {
 @Composable
 private fun SmokeContent(
     densityScale: Float,
-    externalFigureModelRef: AtomicReference<PlotFigureModel?>
+    externalFigureModelRef: AtomicReference<PlotFigureModel?>,
+    figureVariantSetterRef: AtomicReference<((Boolean) -> Unit)?>
 ) {
-    val figure = remember { createFigure() }
+    var alternateFigure by remember { mutableStateOf(false) }
+    val figure = remember(alternateFigure) {
+        if (alternateFigure) createAlternateFigure() else createFigure()
+    }
     val figureModel = remember { PlotFigureModel() }
 
-    DisposableEffect(figureModel, externalFigureModelRef) {
+    DisposableEffect(figureModel, externalFigureModelRef, figureVariantSetterRef) {
         externalFigureModelRef.set(figureModel)
+        figureVariantSetterRef.set { alternate -> alternateFigure = alternate }
         onDispose {
+            figureVariantSetterRef.set(null)
             externalFigureModelRef.compareAndSet(figureModel, null)
             figureModel.dispose()
         }
@@ -403,13 +479,15 @@ private fun SmokeContent(
             ) {
                 Text("Lets-Plot consumer smoke")
 
-                PlotPanel(
-                    figure = figure,
-                    figureModel = figureModel,
-                    preserveAspectRatio = false,
-                    modifier = Modifier.fillMaxSize()
-                ) { messages ->
-                    messages.forEach { println("SMOKE_PLOT_MESSAGE $it") }
+                key(alternateFigure) {
+                    PlotPanel(
+                        figure = figure,
+                        figureModel = figureModel,
+                        preserveAspectRatio = false,
+                        modifier = Modifier.fillMaxSize()
+                    ) { messages ->
+                        messages.forEach { println("SMOKE_PLOT_MESSAGE $it") }
+                    }
                 }
             }
         }
@@ -437,6 +515,31 @@ private fun createFigure(): Figure {
             y = "y"
             color = "group"
         }
+}
+
+private fun createAlternateFigure(): Figure {
+    val xValues = listOf(-3.0, -1.0, 1.0, 3.0)
+    val yValues = listOf(9.0, 1.0, 1.0, 9.0)
+    val data = mapOf(
+        "x" to xValues,
+        "y" to yValues
+    )
+
+    return letsPlot(data) +
+        geomPoint(size = 18.0, color = "#3366CC") {
+            x = "x"
+            y = "y"
+        }
+}
+
+private suspend fun awaitFigureVariantSetter(
+    ref: AtomicReference<((Boolean) -> Unit)?>
+): (Boolean) -> Unit {
+    repeat(150) {
+        ref.get()?.let { return it }
+        delay(100)
+    }
+    error("Timed out waiting for figure replacement control.")
 }
 
 private suspend fun awaitFigureModel(
