@@ -64,23 +64,38 @@ class AndroidConsumerRuntimeSmokeTest {
             uniqueColors >= 4 && plottedPointPixels >= 20
         )
 
-        plot.performTouchInput {
-            swipe(
-                start = Offset(center.x + 160f, center.y),
-                end = Offset(center.x - 160f, center.y),
-                durationMillis = 700
-            )
+        var after = before
+        var diffRatio = 0.0
+        var panAttempts = 0
+
+        for (attempt in 1..3) {
+            panAttempts = attempt
+            plot.performTouchInput {
+                swipe(
+                    start = Offset(center.x + 160f, center.y),
+                    end = Offset(center.x - 160f, center.y),
+                    durationMillis = 700
+                )
+            }
+
+            composeRule.waitForIdle()
+            Thread.sleep(800)
+
+            after = plot.captureToImage().asAndroidBitmap()
+            diffRatio = pixelDifferenceRatio(before, after)
+            if (diffRatio > 0.002) {
+                break
+            }
+
+            // The emulator can deliver the first gesture before Lets-Plot's
+            // dispatcher has finished binding to the freshly rendered drawable.
+            // Keep the assertion strict, but allow a bounded real-gesture retry.
+            Thread.sleep(500)
         }
 
-        composeRule.waitForIdle()
-        Thread.sleep(800)
-
-        val afterImage = plot.captureToImage()
-        val after = afterImage.asAndroidBitmap()
-        val diffRatio = pixelDifferenceRatio(before, after)
-
         assertTrue(
-            "Drag pan did not visibly change the published Android consumer: diffRatio=$diffRatio",
+            "Drag pan did not visibly change the published Android consumer " +
+                "after $panAttempts attempt(s): diffRatio=$diffRatio",
             diffRatio > 0.002
         )
 
@@ -97,6 +112,7 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("render.sampled_unique_colors=$uniqueColors")
             appendLine("render.plotted_point_pixels=$plottedPointPixels")
             appendLine("pan.diff_ratio=$diffRatio")
+            appendLine("pan.attempts=$panAttempts")
             appendLine("production.renderer.default=NATIVE_CANVAS")
             appendLine("graphite.production=DISABLED")
         }

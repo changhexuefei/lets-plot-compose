@@ -3,7 +3,6 @@ package smoke
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import org.jetbrains.letsPlot.compose.PlotFigureModel
@@ -25,15 +24,15 @@ fun ConsumerPlot() {
             y = "y"
         }
     }
-    val figureModel = remember { PlotFigureModel() }
-
-    LaunchedEffect(figureModel) {
-        figureModel.setDefaultInteractions(
-            listOf(
-                InteractionSpec(InteractionSpec.Name.WHEEL_ZOOM),
-                InteractionSpec(InteractionSpec.Name.DRAG_PAN)
+    val figureModel = remember {
+        PlotFigureModel().apply {
+            setDefaultInteractions(
+                listOf(
+                    InteractionSpec(InteractionSpec.Name.WHEEL_ZOOM),
+                    InteractionSpec(InteractionSpec.Name.DRAG_PAN)
+                )
             )
-        )
+        }
     }
     DisposableEffect(figureModel) {
         onDispose { figureModel.dispose() }

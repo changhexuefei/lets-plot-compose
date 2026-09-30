@@ -232,6 +232,14 @@ jobs:
           grep -R -q "PlotFigureModelDispatcherOwnerTest" "$test_results"
           grep -R -q "DefaultInteractionFeedbackOwnerTest" "$test_results"
 
+          android_pointer="compose/lets-plot-compose/src/androidMain/kotlin/org/jetbrains/letsPlot/compose/PlotPanelComposeCanvas.kt"
+          desktop_pointer="compose/lets-plot-compose/src/desktopMain/kotlin/org/jetbrains/letsPlot/compose/ComposeMouseEventMapper.kt"
+          wasm_pointer="compose/lets-plot-compose/src/wasmJsMain/kotlin/org/jetbrains/letsPlot/compose/ComposeMouseEventMapper.kt"
+
+          grep -Fq 'awaitPointerEvent(PointerEventPass.Initial)' "$android_pointer"
+          grep -Fq 'awaitPointerEvent(PointerEventPass.Initial)' "$desktop_pointer"
+          grep -Fq 'awaitPointerEvent(PointerEventPass.Initial)' "$wasm_pointer"
+
           evidence_dir="compose/lets-plot-compose/build/interaction-contract"
           mkdir -p "$evidence_dir"
 
@@ -247,6 +255,10 @@ jobs:
           pointer.modifiers=CTRL_ALT_SHIFT_META
           pointer.drag_release_click=SUPPRESSED
           pointer.drag_release_click_sequence=RESET
+          pointer.event_pass=INITIAL_ALL_COMPOSE_TARGETS
+          pointer.event_pass.desktop=INITIAL
+          pointer.event_pass.android=INITIAL
+          pointer.event_pass.wasm=INITIAL
           figure_model.toolbarless_feedback=PASS
           figure_model.dispatcher_ownership=PASS
           figure_model.stale_release=SAFE
