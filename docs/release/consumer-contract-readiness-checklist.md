@@ -10,32 +10,38 @@ This checklist defines the release boundary for `lets-plot-compose`.
 
 ## Lifecycle Contract
 
-Required regression coverage:
+Verified by the current release gate:
 
-- [ ] recomposition
-- [ ] plot replacement
-- [ ] window recreation
-- [ ] resource disposal
-- [ ] configuration changes
+- [x] plot replacement and FigureModel reconnect on Desktop, Android, and WasmJS
+- [x] Desktop window close/reopen creates a new window instance
+- [x] computation-message redispatch after plot replacement/restoration
+
+Follow-up lifecycle hardening is tracked separately and must not be reported as passing evidence until dedicated runtime checks exist:
+
+- [ ] explicit recomposition lifecycle probe
+- [ ] explicit resource-disposal counter/assertion
+- [ ] Android configuration-change recreation probe
 
 ## Platform Contract
 
 | Target | Validation |
 | --- | --- |
-| Desktop JVM | Consumer smoke required |
-| Android | Published variant resolution and runtime smoke required |
-| WasmJS | Production bundle and browser smoke required |
+| Desktop JVM | Published consumer smoke on Windows/JDK 21 plus 9 screenshot checkpoints |
+| Android | Published variant resolution, release AAR, and API 34 emulator runtime smoke |
+| WasmJS | Published variant resolution, production bundle, and browser interaction smoke |
 
 ## Release Candidate Gate
 
 Before publishing a release candidate:
 
-- [ ] standalone external consumer build
-- [ ] published artifact resolution
-- [ ] rendering regression evidence
-- [ ] interaction regression evidence
-- [ ] lifecycle regression evidence
-- [ ] screenshot artifacts retained
+- [x] standalone external consumer build
+- [x] published artifact resolution
+- [x] rendering regression evidence
+- [x] interaction regression evidence
+- [x] currently verified lifecycle/replacement evidence
+- [x] screenshot artifacts retained for 90 days
+
+The release gate must describe only evidence that is actually asserted by CI. Unimplemented lifecycle probes stay unchecked and are not promoted to `PASS` in release artifacts.
 
 ## Renderer Policy
 
