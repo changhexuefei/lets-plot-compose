@@ -3959,6 +3959,8 @@ jobs:
       - core-jvm-bundle
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      ANDROID_EMULATOR_API_LEVEL: '34'
 
     steps:
       - name: Checkout standalone multiplatform consumer only
@@ -4023,7 +4025,7 @@ jobs:
           LETS_PLOT_KOTLIN_REPO: ${{ github.workspace }}/consumer-bundle/kotlin
           LETS_PLOT_COMPOSE_REPO: ${{ github.workspace }}/consumer-bundle/compose
         with:
-          api-level: 34
+          api-level: ${{ env.ANDROID_EMULATOR_API_LEVEL }}
           target: google_apis
           arch: x86_64
           profile: pixel_2
@@ -4048,6 +4050,8 @@ jobs:
           grep -Fqx 'result=ANDROID_EMULATOR_CONSUMER_SMOKE_PASS' "$evidence"
           grep -Fqx 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$evidence"
           grep -Fqx 'runtime=ANDROID_EMULATOR' "$evidence"
+          echo "emulator.api_level=${ANDROID_EMULATOR_API_LEVEL}" >> "$evidence"
+          grep -Fqx "emulator.api_level=${ANDROID_EMULATOR_API_LEVEL}" "$evidence"
           grep -Fqx 'render=PASS' "$evidence"
           grep -Fqx 'drag_pan=PASS' "$evidence"
           grep -Fqx 'tooltip=PASS' "$evidence"
@@ -4177,6 +4181,7 @@ jobs:
           assert_line 'result=ANDROID_EMULATOR_CONSUMER_SMOKE_PASS' "$android_emulator_smoke"
           assert_line 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$android_emulator_smoke"
           assert_line 'runtime=ANDROID_EMULATOR' "$android_emulator_smoke"
+          assert_line 'emulator.api_level=34' "$android_emulator_smoke"
           assert_line 'render=PASS' "$android_emulator_smoke"
           assert_line 'drag_pan=PASS' "$android_emulator_smoke"
           assert_line 'tooltip=PASS' "$android_emulator_smoke"
@@ -4216,6 +4221,7 @@ jobs:
           desktop.platform=WINDOWS
           desktop.jdk=21
           desktop.required_screenshots=9
+          desktop.window_reopen=PASS
           desktop.figure_model_programmatic_override=PASS
           desktop.figure_model_programmatic_rollback=PASS
           desktop.figure_model_reconnect_after_replace=PASS
@@ -4227,6 +4233,7 @@ jobs:
           android.consumer=PASS
           android.release_aar=PASS
           android.emulator_runtime=PASS
+          android.emulator_api_level=34
           android.emulator_render=PASS
           android.emulator_drag_pan=PASS
           android.emulator_tooltip=PASS
@@ -4331,6 +4338,7 @@ jobs:
           assert_readiness_line 'desktop.platform=WINDOWS'
           assert_readiness_line 'desktop.jdk=21'
           assert_readiness_line 'desktop.required_screenshots=9'
+          assert_readiness_line 'desktop.window_reopen=PASS'
           assert_readiness_line 'desktop.figure_model_reconnect_after_replace=PASS'
           assert_readiness_line 'desktop.figure_model_replacement_control=PASS'
           assert_readiness_line 'desktop.computation_messages_spec_replace_redispatch=PASS'
@@ -4340,6 +4348,7 @@ jobs:
           assert_readiness_line 'android.consumer=PASS'
           assert_readiness_line 'android.release_aar=PASS'
           assert_readiness_line 'android.emulator_runtime=PASS'
+          assert_readiness_line 'android.emulator_api_level=34'
           assert_readiness_line 'android.emulator_render=PASS'
           assert_readiness_line 'android.emulator_drag_pan=PASS'
           assert_readiness_line 'android.emulator_tooltip=PASS'
@@ -4380,16 +4389,18 @@ jobs:
           desktop.consumer=PASS
           desktop.runtime=WINDOWS_JDK21
           desktop.screenshot_regression=9
-          desktop.lifecycle_and_replace=PASS
+          desktop.figure_replace_reconnect=PASS
+          desktop.window_reopen=PASS
           android.consumer=PASS
           android.runtime=API34_EMULATOR
+          android.emulator_api_level=34
           android.render=PASS
           android.interaction=DRAG_PAN_TOOLTIP_PASS
-          android.lifecycle_and_replace=PASS
+          android.figure_replace_reconnect=PASS
           wasm.consumer=PASS
           wasm.production_bundle=PASS
           wasm.browser_interaction=RENDER_TOOLTIP_ZOOM_PAN_PASS
-          wasm.lifecycle_and_replace=PASS
+          wasm.figure_replace_reconnect=PASS
           publication.metadata_targets=DESKTOP_ANDROID_WASM_PASS
           public.api.defaults_compile=PASS
           public.api.change=SOURCE_COMPATIBLE_DEFAULTS
