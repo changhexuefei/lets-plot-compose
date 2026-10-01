@@ -4093,7 +4093,6 @@ jobs:
     needs:
       - windows-consumer-smoke
       - android-emulator-consumer-smoke
-      - consumer-lifecycle-hardening
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -4173,6 +4172,7 @@ jobs:
       - windows-consumer-smoke
       - multiplatform-consumer-smoke
       - android-emulator-consumer-smoke
+      - consumer-lifecycle-hardening
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
