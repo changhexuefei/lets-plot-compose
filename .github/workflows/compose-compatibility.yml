@@ -4271,6 +4271,145 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+
+  consumer-contract-regression:
+    needs:
+      - release-candidate-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout consumer contract
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docs/consumer-contract.md
+            docs/release/consumer-contract-readiness-checklist.md
+          sparse-checkout-cone-mode: false
+
+      - name: Download release-candidate readiness evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: release-candidate-readiness-3.2.3-${{ github.sha }}
+          path: evidence/release-candidate
+
+      - name: Verify Compose Multiplatform consumer contract matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          contract='docs/consumer-contract.md'
+          checklist='docs/release/consumer-contract-readiness-checklist.md'
+          readiness="$(find evidence/release-candidate -name '3.2.3-rc-readiness.txt' -type f -print -quit)"
+
+          test -s "$contract"
+          test -s "$checklist"
+          test -n "$readiness"
+          test -s "$readiness"
+
+          assert_contract_text() {
+            local expected="$1"
+            grep -Fq -- "$expected" "$contract"
+          }
+
+          assert_readiness_line() {
+            local expected="$1"
+            tr -d '\r' < "$readiness" | grep -Fqx -- "$expected"
+          }
+
+          # Stable public boundary.
+          assert_contract_text 'PlotPanel'
+          assert_contract_text 'Skiko internals'
+          assert_contract_text 'renderer implementations'
+          assert_contract_text 'platform canvas objects'
+          assert_contract_text 'Graphite readiness probes are evidence-only'
+
+          # Desktop published-consumer contract.
+          assert_readiness_line 'result=RELEASE_CANDIDATE_READINESS_PASS'
+          assert_readiness_line 'consumer.boundary=PUBLISHED_MAVEN_ONLY'
+          assert_readiness_line 'desktop.consumer=PASS'
+          assert_readiness_line 'desktop.platform=WINDOWS'
+          assert_readiness_line 'desktop.jdk=21'
+          assert_readiness_line 'desktop.required_screenshots=9'
+          assert_readiness_line 'desktop.figure_model_reconnect_after_replace=PASS'
+          assert_readiness_line 'desktop.figure_model_replacement_control=PASS'
+          assert_readiness_line 'desktop.computation_messages_spec_replace_redispatch=PASS'
+          assert_readiness_line 'desktop.computation_messages_restore_redispatch=PASS'
+
+          # Android published-consumer contract.
+          assert_readiness_line 'android.consumer=PASS'
+          assert_readiness_line 'android.release_aar=PASS'
+          assert_readiness_line 'android.emulator_runtime=PASS'
+          assert_readiness_line 'android.emulator_render=PASS'
+          assert_readiness_line 'android.emulator_drag_pan=PASS'
+          assert_readiness_line 'android.emulator_tooltip=PASS'
+          assert_readiness_line 'android.figure_model_reconnect_after_replace=PASS'
+          assert_readiness_line 'android.figure_model_replacement_control=PASS'
+
+          # Wasm published-consumer contract.
+          assert_readiness_line 'wasm.consumer=PASS'
+          assert_readiness_line 'wasm.production_bundle=PASS'
+          assert_readiness_line 'wasm.binary=PASS'
+          assert_readiness_line 'wasm.browser_runtime=PASS'
+          assert_readiness_line 'wasm.browser_interactions=RENDER_TOOLTIP_ZOOM_PAN_PASS'
+          assert_readiness_line 'wasm.figure_model_reconnect_after_replace=PASS'
+          assert_readiness_line 'wasm.figure_model_replacement_control=PASS'
+
+          # Publication metadata exposes the same supported target matrix.
+          assert_readiness_line 'publication.root=PASS'
+          assert_readiness_line 'publication.desktop=PASS'
+          assert_readiness_line 'publication.android=PASS'
+          assert_readiness_line 'publication.wasm=PASS'
+          assert_readiness_line 'publication.metadata_targets=PASS'
+
+          # Renderer experiments remain outside the production contract.
+          assert_readiness_line 'production.renderer.default=NATIVE_CANVAS'
+          assert_readiness_line 'graphite.production=DISABLED'
+          assert_readiness_line 'graphite.readiness=SEPARATE_EXPERIMENTAL_GATE'
+
+          # Source-compatible defaults remain the supported API boundary.
+          assert_readiness_line 'public.api.defaults_compile=PASS'
+          assert_readiness_line 'public.api.change=SOURCE_COMPATIBLE_DEFAULTS'
+
+          mkdir -p evidence/consumer-contract
+          cat > evidence/consumer-contract/consumer-contract-regression.txt <<EOF
+          schema=1
+          result=CONSUMER_CONTRACT_REGRESSION_PASS
+          release.line=3.2.3-SNAPSHOT
+          consumer.boundary=PUBLISHED_MAVEN_ONLY
+          desktop.consumer=PASS
+          desktop.runtime=WINDOWS_JDK21
+          desktop.screenshot_regression=9
+          desktop.lifecycle_and_replace=PASS
+          android.consumer=PASS
+          android.runtime=API34_EMULATOR
+          android.render=PASS
+          android.interaction=DRAG_PAN_TOOLTIP_PASS
+          android.lifecycle_and_replace=PASS
+          wasm.consumer=PASS
+          wasm.production_bundle=PASS
+          wasm.browser_interaction=RENDER_TOOLTIP_ZOOM_PAN_PASS
+          wasm.lifecycle_and_replace=PASS
+          publication.metadata_targets=DESKTOP_ANDROID_WASM_PASS
+          public.api.defaults_compile=PASS
+          public.api.change=SOURCE_COMPATIBLE_DEFAULTS
+          production.renderer.default=NATIVE_CANVAS
+          graphite.production=DISABLED
+          graphite.contract=EVIDENCE_ONLY
+          workflow.sha=${GITHUB_SHA}
+          workflow.run_id=${GITHUB_RUN_ID}
+          EOF
+
+          cat evidence/consumer-contract/consumer-contract-regression.txt
+
+      - name: Upload consumer contract regression evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: consumer-contract-regression-${{ github.sha }}
+          path: evidence/consumer-contract/consumer-contract-regression.txt
+          if-no-files-found: error
+          retention-days: 90
+
   release-dependency-preflight:
     needs:
       - release-candidate-readiness
