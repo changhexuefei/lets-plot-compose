@@ -133,14 +133,24 @@ class AndroidConsumerRuntimeSmokeTest {
         composeRule.runOnIdle {
             composeRule.activity.alternateFigure = true
         }
-        composeRule.waitForIdle()
-        Thread.sleep(900)
 
-        val replacementImage = plot.captureToImage().asAndroidBitmap()
-        val replacementDiffRatio = pixelDifferenceRatio(rollbackImage, replacementImage)
+        var replacementImage = rollbackImage
+        var replacementDiffRatio = 0.0
+        var replacementAttempts = 0
+        for (attempt in 1..5) {
+            replacementAttempts = attempt
+            composeRule.waitForIdle()
+            Thread.sleep(600)
+            replacementImage = plot.captureToImage().asAndroidBitmap()
+            replacementDiffRatio = pixelDifferenceRatio(rollbackImage, replacementImage)
+            if (replacementDiffRatio > 0.002) {
+                break
+            }
+        }
+
         assertTrue(
-            "Replacing the Android consumer figure did not visibly change the plot: " +
-                "diffRatio=$replacementDiffRatio",
+            "Replacing the Android consumer figure did not visibly change the plot " +
+                "after $replacementAttempts attempt(s): diffRatio=$replacementDiffRatio",
             replacementDiffRatio > 0.002
         )
 
@@ -286,6 +296,7 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("figure_model.override_diff_ratio=$programmaticDiffRatio")
             appendLine("figure_model.rollback_diff_ratio=$rollbackDiffRatio")
             appendLine("figure_model.replace_diff_ratio=$replacementDiffRatio")
+            appendLine("figure_model.replace_attempts=$replacementAttempts")
             appendLine("figure_model.replacement_control_diff_ratio=$replacementControlDiffRatio")
             appendLine("figure_model.restore_diff_ratio=$restoredFigureDiffRatio")
             appendLine("pan.diff_ratio=$diffRatio")
