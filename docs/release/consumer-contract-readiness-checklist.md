@@ -42,3 +42,11 @@ Before publishing a release candidate:
 Production renderer changes require a separate compatibility review.
 
 Graphite readiness experiments remain evidence-only until upstream Compose and Skiko compatibility is established.
+
+## CI Evidence
+
+The compatibility workflow publishes `consumer-contract-evidence-<sha>` after
+the release-candidate readiness job. Its manifest maps this checklist to the
+published-consumer evidence and explicitly records lifecycle scenarios that
+still need dedicated regression coverage. A recorded baseline is not release
+approval while any lifecycle entry remains `REQUIRES_DEDICATED_EVIDENCE`.

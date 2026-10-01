@@ -4271,9 +4271,51 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  consumer-contract-evidence:
+    needs:
+      - release-candidate-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout consumer-contract evidence tools
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docs/release/consumer-contract-readiness-checklist.md
+            .github/scripts/consumer-contract-evidence.sh
+            .github/scripts/test-consumer-contract-evidence.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Download release-candidate evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: release-candidate-readiness-3.2.3-${{ github.sha }}
+          path: evidence/readiness
+
+      - name: Validate consumer-contract evidence tool
+        shell: bash
+        run: |
+          bash -n .github/scripts/consumer-contract-evidence.sh
+          bash -n .github/scripts/test-consumer-contract-evidence.sh
+          bash .github/scripts/test-consumer-contract-evidence.sh
+
+      - name: Record consumer-contract checklist evidence
+        shell: bash
+        run: bash .github/scripts/consumer-contract-evidence.sh
+
+      - name: Upload consumer-contract checklist evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: consumer-contract-evidence-${{ github.sha }}
+          path: evidence/readiness/consumer-contract-evidence.txt
+          if-no-files-found: error
+          retention-days: 90
+
   release-dependency-preflight:
     needs:
       - release-candidate-readiness
+      - consumer-contract-evidence
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
