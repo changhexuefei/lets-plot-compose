@@ -25,6 +25,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
 import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import org.jetbrains.letsPlot.compose.PlotFigureModel
 import org.jetbrains.letsPlot.core.interact.InteractionSpec
@@ -35,6 +36,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 class AndroidConsumerSmokeActivity : ComponentActivity() {
+    companion object {
+        val createCount = AtomicInteger(0)
+        val disposeCount = AtomicInteger(0)
+    }
+
     var alternateFigure by mutableStateOf(false)
     val figureModel = PlotFigureModel().apply {
         setDefaultInteractions(
@@ -47,6 +53,7 @@ class AndroidConsumerSmokeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        createCount.incrementAndGet()
         setContent {
             Box(
                 Modifier
@@ -63,6 +70,7 @@ class AndroidConsumerSmokeActivity : ComponentActivity() {
 
     override fun onDestroy() {
         figureModel.dispose()
+        disposeCount.incrementAndGet()
         super.onDestroy()
     }
 }
@@ -125,14 +133,24 @@ class AndroidConsumerRuntimeSmokeTest {
         composeRule.runOnIdle {
             composeRule.activity.alternateFigure = true
         }
-        composeRule.waitForIdle()
-        Thread.sleep(900)
 
-        val replacementImage = plot.captureToImage().asAndroidBitmap()
-        val replacementDiffRatio = pixelDifferenceRatio(rollbackImage, replacementImage)
+        var replacementImage = rollbackImage
+        var replacementDiffRatio = 0.0
+        var replacementAttempts = 0
+        for (attempt in 1..5) {
+            replacementAttempts = attempt
+            composeRule.waitForIdle()
+            Thread.sleep(600)
+            replacementImage = plot.captureToImage().asAndroidBitmap()
+            replacementDiffRatio = pixelDifferenceRatio(rollbackImage, replacementImage)
+            if (replacementDiffRatio > 0.002) {
+                break
+            }
+        }
+
         assertTrue(
-            "Replacing the Android consumer figure did not visibly change the plot: " +
-                "diffRatio=$replacementDiffRatio",
+            "Replacing the Android consumer figure did not visibly change the plot " +
+                "after $replacementAttempts attempt(s): diffRatio=$replacementDiffRatio",
             replacementDiffRatio > 0.002
         )
 
@@ -221,6 +239,38 @@ class AndroidConsumerRuntimeSmokeTest {
             tooltipDiffRatio > 0.0005
         )
 
+        val activityBeforeRecreate = composeRule.activity
+        val createCountBeforeRecreate = AndroidConsumerSmokeActivity.createCount.get()
+        val disposeCountBeforeRecreate = AndroidConsumerSmokeActivity.disposeCount.get()
+
+        composeRule.activityRule.scenario.recreate()
+        composeRule.waitForIdle()
+        Thread.sleep(1_200)
+
+        val activityAfterRecreate = composeRule.activity
+        assertTrue(
+            "Android recreation reused the same Activity instance.",
+            activityAfterRecreate !== activityBeforeRecreate
+        )
+        assertTrue(
+            "Android configuration-change recreation did not create a new Activity.",
+            AndroidConsumerSmokeActivity.createCount.get() > createCountBeforeRecreate
+        )
+        assertTrue(
+            "Android configuration-change recreation did not dispose the previous PlotFigureModel.",
+            AndroidConsumerSmokeActivity.disposeCount.get() > disposeCountBeforeRecreate
+        )
+
+        val recreatedPlot = composeRule.onNodeWithTag("android-consumer-test-root")
+        val recreatedImage = recreatedPlot.captureToImage().asAndroidBitmap()
+        val recreatedUniqueColors = sampledUniqueColorCount(recreatedImage)
+        val recreatedPointPixels = plottedPointPixelCount(recreatedImage)
+        assertTrue(
+            "Recreated Android consumer render looks blank: " +
+                "sampledUniqueColors=$recreatedUniqueColors, plottedPointPixels=$recreatedPointPixels",
+            recreatedUniqueColors >= 4 && recreatedPointPixels >= 20
+        )
+
         val evidence = buildString {
             appendLine("schema=1")
             appendLine("result=ANDROID_EMULATOR_CONSUMER_SMOKE_PASS")
@@ -236,11 +286,17 @@ class AndroidConsumerRuntimeSmokeTest {
             appendLine("figure_model.reconnect_after_figure_replace=PASS")
             appendLine("figure_model.replacement_control=PASS")
             appendLine("figure_model.toolbarless_feedback=RUNTIME_PASS")
+            appendLine("lifecycle.configuration_recreation=PASS")
+            appendLine("lifecycle.resource_disposal=PASS")
+            appendLine("lifecycle.activity_create_count=${AndroidConsumerSmokeActivity.createCount.get()}")
+            appendLine("lifecycle.activity_dispose_count=${AndroidConsumerSmokeActivity.disposeCount.get()}")
+            appendLine("lifecycle.recreated_render=PASS")
             appendLine("render.sampled_unique_colors=$uniqueColors")
             appendLine("render.plotted_point_pixels=$plottedPointPixels")
             appendLine("figure_model.override_diff_ratio=$programmaticDiffRatio")
             appendLine("figure_model.rollback_diff_ratio=$rollbackDiffRatio")
             appendLine("figure_model.replace_diff_ratio=$replacementDiffRatio")
+            appendLine("figure_model.replace_attempts=$replacementAttempts")
             appendLine("figure_model.replacement_control_diff_ratio=$replacementControlDiffRatio")
             appendLine("figure_model.restore_diff_ratio=$restoredFigureDiffRatio")
             appendLine("pan.diff_ratio=$diffRatio")
@@ -266,6 +322,7 @@ class AndroidConsumerRuntimeSmokeTest {
         writeShellFile("$remoteDir/06-figure-replacement.png", bitmapPngBytes(replacementImage))
         writeShellFile("$remoteDir/07-replacement-programmatic-override.png", bitmapPngBytes(replacementControlledImage))
         writeShellFile("$remoteDir/08-restored-original-figure.png", bitmapPngBytes(restoredFigureImage))
+        writeShellFile("$remoteDir/09-after-activity-recreate.png", bitmapPngBytes(recreatedImage))
         writeShellFile(
             "$remoteDir/android-emulator-consumer-smoke.txt",
             evidence.toByteArray(Charsets.UTF_8)

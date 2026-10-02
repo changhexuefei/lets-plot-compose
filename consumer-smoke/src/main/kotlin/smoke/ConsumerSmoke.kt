@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -68,6 +69,8 @@ fun main() {
     val externalFigureModel = AtomicReference<PlotFigureModel?>()
     val figureVariantSetter = AtomicReference<((Boolean) -> Unit)?>()
     val computationCallbackCount = AtomicInteger(0)
+    val recompositionCount = AtomicInteger(0)
+    val contentDisposeCount = AtomicInteger(0)
     val asyncFailure = AtomicReference<Throwable?>()
     val completed = AtomicBoolean(false)
 
@@ -80,6 +83,7 @@ fun main() {
         var showWindow by remember { mutableStateOf(true) }
         var windowGeneration by remember { mutableIntStateOf(0) }
         var densityScale by remember { mutableFloatStateOf(1.0f) }
+        var recompositionGeneration by remember { mutableIntStateOf(0) }
 
         if (showWindow) {
             key(windowGeneration) {
@@ -97,9 +101,12 @@ fun main() {
 
                     SmokeContent(
                         densityScale = densityScale,
+                        recompositionGeneration = recompositionGeneration,
                         externalFigureModelRef = externalFigureModel,
                         figureVariantSetterRef = figureVariantSetter,
-                        computationCallbackCount = computationCallbackCount
+                        computationCallbackCount = computationCallbackCount,
+                        recompositionCount = recompositionCount,
+                        contentDisposeCount = contentDisposeCount
                     )
                 }
             }
@@ -124,6 +131,21 @@ fun main() {
                     "Initial figure dispatched computation messages more than once: " +
                         "count=${computationCallbackCount.get()}"
                 }
+
+                val recompositionsBeforeProbe = recompositionCount.get()
+                recompositionGeneration += 1
+                delay(600)
+                ensureNoAsyncFailure(asyncFailure)
+                val recompositionsAfterProbe = recompositionCount.get()
+                check(recompositionsAfterProbe > recompositionsBeforeProbe) {
+                    "Explicit recomposition probe did not recompose SmokeContent: " +
+                        "before=$recompositionsBeforeProbe after=$recompositionsAfterProbe"
+                }
+                check(contentDisposeCount.get() == 0) {
+                    "Explicit recomposition unexpectedly disposed consumer resources: " +
+                        "disposeCount=${contentDisposeCount.get()}"
+                }
+                checkpoint("recomposition")
 
                 val figureModel = awaitFigureModel(externalFigureModel)
                 val programmaticDir = outputDir.resolve("programmatic")
@@ -331,6 +353,13 @@ fun main() {
                     firstWindow.dispatchEvent(WindowEvent(firstWindow, WindowEvent.WINDOW_CLOSING))
                 }
                 awaitWindowClosed(visibleWindow, firstWindow)
+                repeat(40) {
+                    if (contentDisposeCount.get() >= 1) return@repeat
+                    delay(50)
+                }
+                check(contentDisposeCount.get() >= 1) {
+                    "Closing the Desktop consumer did not execute the PlotFigureModel disposal path."
+                }
                 checkpoint("close")
                 densityScale = 1.0f
                 windowGeneration += 1
@@ -426,6 +455,11 @@ fun main() {
                             "graphite.runtime.cleanup=" +
                                 (System.getProperty("letsplot.compose.graphite.runtime.cleanup") ?: "ABSENT")
                         )
+                        appendLine("lifecycle.recomposition=PASS")
+                        appendLine("lifecycle.recomposition.before=$recompositionsBeforeProbe")
+                        appendLine("lifecycle.recomposition.after=$recompositionsAfterProbe")
+                        appendLine("lifecycle.resource_disposal=PASS")
+                        appendLine("lifecycle.resource_dispose_count=${contentDisposeCount.get()}")
                         appendLine("figure_model.external=TRUE")
                         appendLine("figure_model.programmatic_override=PASS")
                         appendLine("figure_model.programmatic_rollback=PASS")
@@ -440,7 +474,7 @@ fun main() {
                         appendLine("computation_messages.spec_replace_redispatch=PASS")
                         appendLine("computation_messages.restore_redispatch=PASS")
                         appendLine("computation_messages.pre_reopen_count=3")
-                        appendLine("checks=render,figure-model-programmatic,figure-model-reconnect,computation-message-redispatch,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
+                        appendLine("checks=render,recomposition,resource-disposal,figure-model-programmatic,figure-model-reconnect,computation-message-redispatch,resize,tooltip,zoom,pan,density-1.0,density-1.25,density-1.5,close,reopen")
                     }
                 )
 
@@ -462,15 +496,23 @@ fun main() {
 @Composable
 private fun SmokeContent(
     densityScale: Float,
+    recompositionGeneration: Int,
     externalFigureModelRef: AtomicReference<PlotFigureModel?>,
     figureVariantSetterRef: AtomicReference<((Boolean) -> Unit)?>,
-    computationCallbackCount: AtomicInteger
+    computationCallbackCount: AtomicInteger,
+    recompositionCount: AtomicInteger,
+    contentDisposeCount: AtomicInteger
 ) {
     var alternateFigure by remember { mutableStateOf(false) }
     val figure = remember(alternateFigure) {
         if (alternateFigure) createAlternateFigure() else createFigure()
     }
     val figureModel = remember { PlotFigureModel() }
+
+    SideEffect {
+        val count = recompositionCount.incrementAndGet()
+        println("SMOKE_RECOMPOSITION generation=$recompositionGeneration count=$count")
+    }
 
     DisposableEffect(figureModel, externalFigureModelRef, figureVariantSetterRef) {
         externalFigureModelRef.set(figureModel)
@@ -479,6 +521,8 @@ private fun SmokeContent(
             figureVariantSetterRef.set(null)
             externalFigureModelRef.compareAndSet(figureModel, null)
             figureModel.dispose()
+            val disposeCount = contentDisposeCount.incrementAndGet()
+            println("SMOKE_RESOURCE_DISPOSE count=$disposeCount")
         }
     }
 
@@ -511,6 +555,8 @@ private fun SmokeContent(
                     .padding(12.dp)
             ) {
                 Text("Lets-Plot consumer smoke")
+                @Suppress("UNUSED_VARIABLE")
+                val lifecycleRecompositionProbe = recompositionGeneration
 
                 key(alternateFigure) {
                     PlotPanel(

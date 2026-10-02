@@ -779,6 +779,12 @@ jobs:
           if (!(Select-String -Path $summary -Pattern "^figure_model.replacement_control=PASS$" -Quiet)) {
             throw "Desktop smoke summary does not contain replacement control evidence"
           }
+          if (!(Select-String -Path $summary -Pattern "^lifecycle.recomposition=PASS$" -Quiet)) {
+            throw "Desktop smoke summary does not contain explicit recomposition lifecycle evidence"
+          }
+          if (!(Select-String -Path $summary -Pattern "^lifecycle.resource_disposal=PASS$" -Quiet)) {
+            throw "Desktop smoke summary does not contain resource disposal lifecycle evidence"
+          }
 
       - name: Capture Skiko renderer dependency report
         working-directory: compose
@@ -4060,6 +4066,9 @@ jobs:
           grep -Fqx 'figure_model.reconnect_after_figure_replace=PASS' "$evidence"
           grep -Fqx 'figure_model.replacement_control=PASS' "$evidence"
           grep -Fqx 'figure_model.toolbarless_feedback=RUNTIME_PASS' "$evidence"
+          grep -Fqx 'lifecycle.configuration_recreation=PASS' "$evidence"
+          grep -Fqx 'lifecycle.resource_disposal=PASS' "$evidence"
+          grep -Fqx 'lifecycle.recreated_render=PASS' "$evidence"
           grep -Fqx 'production.renderer.default=NATIVE_CANVAS' "$evidence"
           grep -Fqx 'graphite.production=DISABLED' "$evidence"
 
@@ -4079,6 +4088,83 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+
+  consumer-lifecycle-hardening:
+    needs:
+      - windows-consumer-smoke
+      - android-emulator-consumer-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download Desktop lifecycle evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: graphite-skiko-baseline-windows-jdk21-software-${{ github.sha }}
+          path: evidence/desktop
+
+      - name: Download Android lifecycle evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: android-emulator-consumer-smoke-${{ github.sha }}
+          path: evidence/android
+
+      - name: Verify consumer lifecycle hardening contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          desktop_smoke="$(find evidence/desktop -name 'smoke-summary.txt' -type f -print -quit)"
+          android_smoke="$(find evidence/android -name 'android-emulator-consumer-smoke.txt' -type f -print -quit)"
+
+          test -n "$desktop_smoke"
+          test -s "$desktop_smoke"
+          test -n "$android_smoke"
+          test -s "$android_smoke"
+
+          assert_line() {
+            local expected="$1"
+            local file="$2"
+            tr -d '\r' < "$file" | grep -Fqx -- "$expected"
+          }
+
+          assert_line 'lifecycle.recomposition=PASS' "$desktop_smoke"
+          assert_line 'lifecycle.resource_disposal=PASS' "$desktop_smoke"
+          assert_line 'figure_model.reconnect_after_figure_replace=PASS' "$desktop_smoke"
+
+          assert_line 'lifecycle.configuration_recreation=PASS' "$android_smoke"
+          assert_line 'lifecycle.resource_disposal=PASS' "$android_smoke"
+          assert_line 'lifecycle.recreated_render=PASS' "$android_smoke"
+          assert_line 'figure_model.reconnect_after_figure_replace=PASS' "$android_smoke"
+
+          mkdir -p evidence/lifecycle
+          cat > evidence/lifecycle/consumer-lifecycle-hardening.txt <<EOF
+          schema=1
+          result=CONSUMER_LIFECYCLE_HARDENING_PASS
+          desktop.recomposition=PASS
+          desktop.resource_disposal=PASS
+          desktop.figure_replace_reconnect=PASS
+          android.configuration_recreation=PASS
+          android.resource_disposal=PASS
+          android.recreated_render=PASS
+          android.figure_replace_reconnect=PASS
+          consumer.boundary=PUBLISHED_MAVEN_ONLY
+          production.renderer.default=NATIVE_CANVAS
+          graphite.contract=EVIDENCE_ONLY
+          workflow.sha=${GITHUB_SHA}
+          workflow.run_id=${GITHUB_RUN_ID}
+          EOF
+
+          cat evidence/lifecycle/consumer-lifecycle-hardening.txt
+
+      - name: Upload consumer lifecycle hardening evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: consumer-lifecycle-hardening-${{ github.sha }}
+          path: evidence/lifecycle/consumer-lifecycle-hardening.txt
+          if-no-files-found: error
+          retention-days: 90
+
   release-candidate-readiness:
     needs:
       - compose-compatibility
@@ -4086,6 +4172,7 @@ jobs:
       - windows-consumer-smoke
       - multiplatform-consumer-smoke
       - android-emulator-consumer-smoke
+      - consumer-lifecycle-hardening
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -4159,6 +4246,8 @@ jobs:
           assert_line 'computation_messages.same_spec_dedup=PASS' "$desktop_smoke"
           assert_line 'computation_messages.spec_replace_redispatch=PASS' "$desktop_smoke"
           assert_line 'computation_messages.restore_redispatch=PASS' "$desktop_smoke"
+          assert_line 'lifecycle.recomposition=PASS' "$desktop_smoke"
+          assert_line 'lifecycle.resource_disposal=PASS' "$desktop_smoke"
 
           assert_line 'result=MULTIPLATFORM_CONSUMER_SMOKE_PASS' "$multiplatform_smoke"
           assert_line 'consumer.boundary=PUBLISHED_MAVEN_ONLY' "$multiplatform_smoke"
@@ -4190,6 +4279,9 @@ jobs:
           assert_line 'figure_model.reconnect_after_figure_replace=PASS' "$android_emulator_smoke"
           assert_line 'figure_model.replacement_control=PASS' "$android_emulator_smoke"
           assert_line 'figure_model.toolbarless_feedback=RUNTIME_PASS' "$android_emulator_smoke"
+          assert_line 'lifecycle.configuration_recreation=PASS' "$android_emulator_smoke"
+          assert_line 'lifecycle.resource_disposal=PASS' "$android_emulator_smoke"
+          assert_line 'lifecycle.recreated_render=PASS' "$android_emulator_smoke"
           assert_line 'production.renderer.default=NATIVE_CANVAS' "$android_emulator_smoke"
 
           compose_repo='evidence/frontend/compose'
@@ -4222,6 +4314,8 @@ jobs:
           desktop.jdk=21
           desktop.required_screenshots=9
           desktop.window_reopen=PASS
+          desktop.recomposition=PASS
+          desktop.resource_disposal=PASS
           desktop.figure_model_programmatic_override=PASS
           desktop.figure_model_programmatic_rollback=PASS
           desktop.figure_model_reconnect_after_replace=PASS
@@ -4237,6 +4331,9 @@ jobs:
           android.emulator_render=PASS
           android.emulator_drag_pan=PASS
           android.emulator_tooltip=PASS
+          android.configuration_recreation=PASS
+          android.resource_disposal=PASS
+          android.recreated_render=PASS
           android.figure_model_programmatic_override=PASS
           android.figure_model_programmatic_rollback=PASS
           android.figure_model_reconnect_after_replace=PASS
@@ -4339,6 +4436,8 @@ jobs:
           assert_readiness_line 'desktop.jdk=21'
           assert_readiness_line 'desktop.required_screenshots=9'
           assert_readiness_line 'desktop.window_reopen=PASS'
+          assert_readiness_line 'desktop.recomposition=PASS'
+          assert_readiness_line 'desktop.resource_disposal=PASS'
           assert_readiness_line 'desktop.figure_model_reconnect_after_replace=PASS'
           assert_readiness_line 'desktop.figure_model_replacement_control=PASS'
           assert_readiness_line 'desktop.computation_messages_spec_replace_redispatch=PASS'
@@ -4352,6 +4451,9 @@ jobs:
           assert_readiness_line 'android.emulator_render=PASS'
           assert_readiness_line 'android.emulator_drag_pan=PASS'
           assert_readiness_line 'android.emulator_tooltip=PASS'
+          assert_readiness_line 'android.configuration_recreation=PASS'
+          assert_readiness_line 'android.resource_disposal=PASS'
+          assert_readiness_line 'android.recreated_render=PASS'
           assert_readiness_line 'android.figure_model_reconnect_after_replace=PASS'
           assert_readiness_line 'android.figure_model_replacement_control=PASS'
 
@@ -4391,12 +4493,17 @@ jobs:
           desktop.screenshot_regression=9
           desktop.figure_replace_reconnect=PASS
           desktop.window_reopen=PASS
+          desktop.recomposition=PASS
+          desktop.resource_disposal=PASS
           android.consumer=PASS
           android.runtime=API34_EMULATOR
           android.emulator_api_level=34
           android.render=PASS
           android.interaction=DRAG_PAN_TOOLTIP_PASS
           android.figure_replace_reconnect=PASS
+          android.configuration_recreation=PASS
+          android.resource_disposal=PASS
+          android.recreated_render=PASS
           wasm.consumer=PASS
           wasm.production_bundle=PASS
           wasm.browser_interaction=RENDER_TOOLTIP_ZOOM_PAN_PASS
